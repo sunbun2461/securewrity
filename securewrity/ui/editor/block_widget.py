@@ -46,12 +46,22 @@ class BlockTextEdit(QTextEdit):
 
     # --- input ---------------------------------------------------------------
     def keyPressEvent(self, e):
+        mods = e.modifiers()
+        if (e.key() == Qt.Key.Key_V and mods & Qt.KeyboardModifier.ControlModifier
+                and mods & Qt.KeyboardModifier.ShiftModifier):
+            self._paste_plain = True  # Ctrl+Shift+V: paste as plain text, no Markdown conversion
+            try:
+                self.paste()
+            finally:
+                self._paste_plain = False
+            return
         if not self.bw.editor.handle_key(self.bw, e):
             super().keyPressEvent(e)
             self.bw.editor.after_key(self.bw, e)
 
     def insertFromMimeData(self, source):
-        self.bw.editor.handle_paste(self.bw, source.text())
+        html = source.html() if source.hasHtml() else ""
+        self.bw.editor.handle_paste(self.bw, source.text(), html, plain=getattr(self, "_paste_plain", False))
 
     def mouseMoveEvent(self, e):
         anchor = self.anchorAt(e.pos())
@@ -240,7 +250,7 @@ class BlockWidget(QWidget):
         self.btype.refresh(self)
 
     def on_focus(self, focused: bool):
-        if focused:
+        if focused and self.parent() is not None:  # ignore late focus events of removed blocks
             self.editor.current = self
         if self.text:
             ph = self.btype.placeholder if (focused or self.type_key != "paragraph") else ""

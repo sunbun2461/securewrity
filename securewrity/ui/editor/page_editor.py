@@ -13,7 +13,9 @@ from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLineEdi
 from ...blocks.registry import registry
 from .. import theme
 from . import richtext
+from ...core.markdown_import import looks_like_markdown, parse_markdown
 from .block_widget import BlockWidget
+from .richtext import html_to_markdown
 from .popups import EmojiPicker, InlineToolbar, SlashMenu, add_color_actions
 
 K = Qt.Key
@@ -236,6 +238,7 @@ class PageEditor(QWidget):
         while self.crumbs.count():
             w = self.crumbs.takeAt(0).widget()
             if w:
+                w.hide()  # deleteLater alone leaves the old path visible until the next event loop pass
                 w.deleteLater()
         if not self.page_id:
             return
@@ -497,6 +500,7 @@ class PageEditor(QWidget):
     def focus_block(self, bw, where="end", x: int | None = None):
         if bw is None:
             return
+        self.current = bw  # don't wait for the (possibly delayed) focus-in event
         if bw.text:
             bw.text.setFocus()
             if x is not None:
@@ -628,42 +632,66 @@ class PageEditor(QWidget):
         nb = self.insert_block({"type": "paragraph"}, None, len(self.blocks))
         self.focus_block(nb, "start")
 
-    def handle_paste(self, bw, text: str):
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        if "\n" not in text or bw.type_key == "code":
+    def handle_paste(self, bw, text: str, html: str = "", plain: bool = False):
+        """Paste. Markdown (including what AIs call "Notion format") and copied web
+        pages become real blocks; Ctrl+Shift+V (plain=True) pastes plain text."""
+        text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+        if plain or bw.type_key == "code" or not bw.text:
+            if bw.text:
+                bw.text.insertPlainText(text)
+            return
+        source = None
+        if looks_like_markdown(text):
+            source = text
+        elif html and re.search(r"<(h[1-6]|li|pre|blockquote|strong|b|em|i|a\s|table|details)\b", html, re.I):
+            source = html_to_markdown(html) or text
+        elif "\n" in text.strip():
+            source = text
+        if source is None:
             bw.text.insertPlainText(text)
             return
-        lines = text.split("\n")
-        if lines and lines[-1] == "":
-            lines.pop()
-        left, right = richtext.split_runs(bw.runs(), bw.cursor_pos())
-        bw.set_runs(richtext.merge_runs(left + [{"t": lines[0]}]))
-        prev = bw
-        for line in lines[1:]:
-            btype, body, props = self._markdown_line(line)
-            prev = self.insert_after(prev, {"type": btype, "content": [{"t": body}] if body else [], "props": props})
-        end = len(prev.plain())
-        if right and prev.text:
-            prev.set_runs(richtext.merge_runs(prev.runs() + right))
-        self.focus_block(prev, end)
+        blocks = parse_markdown(source)
+        if not blocks:
+            return
+        self.insert_parsed(bw, blocks)
 
-    @staticmethod
-    def _markdown_line(line: str):
-        m = re.match(r"^(\s*)(#{1,3}|[-*+]|\d+\.|- \[[ xX]\]|\[[ xX]?\]|>|\")\s+(.*)$", line)
-        if not m:
-            return "paragraph", line, {}
-        tok, body = m.group(2), m.group(3)
-        if tok.startswith("#"):
-            return f"h{len(tok)}", body, {}
-        if tok in "-*+":
-            return "bullet", body, {}
-        if NUM_RE.match(tok):
-            return "numbered", body, {}
-        if "[" in tok:
-            return "todo", body, {"checked": "x" in tok.lower()}
-        if tok == ">":
-            return "quote", body, {}
-        return "quote", body, {}
+    def insert_parsed(self, bw, blocks: list[dict]):
+        """Insert a parsed block tree at the cursor in bw."""
+        left, right = richtext.split_runs(bw.runs(), bw.cursor_pos())
+        first = blocks[0]
+        simple_first = first["type"] == "paragraph" and not first["children"]
+        # one plain paragraph: just inline text (keeps its bold/links/colors)
+        if len(blocks) == 1 and simple_first:
+            bw.set_runs(richtext.merge_runs(left + first["content"] + right))
+            self.focus_block(bw, len(richtext.plain_text(left + first["content"])))
+            self.changed()
+            return
+        empty = not richtext.plain_text(left + right).strip() and not bw.children
+        prev = bw
+        rest = blocks
+        if not empty:
+            if simple_first:
+                bw.set_runs(richtext.merge_runs(left + first["content"]))
+                rest = blocks[1:]
+            else:
+                bw.set_runs(richtext.merge_runs(left))
+        for data in rest:
+            prev = self.insert_after(prev, data)
+        if right:
+            if prev.text and prev.btype.has_text and not prev.children:
+                end = len(prev.plain())
+                prev.set_runs(richtext.merge_runs(prev.runs() + right))
+                self.focus_block(prev, end)
+                return
+            prev = self.insert_after(prev, {"type": "paragraph", "content": right})
+        if empty:
+            self.delete_block(bw, trash_pages=False, focus=False)
+        last = prev
+        while last.children and not last.is_collapsed():
+            last = last.children[-1]
+        if last.text:
+            self.focus_block(last, "end")
+        self.changed()
 
     # =====================================================================
     # keyboard

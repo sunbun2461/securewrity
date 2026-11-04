@@ -150,6 +150,32 @@ a passphrase or a seed phrase. See <a href='#protect'>Protecting an account</a>.
     ["<code>---</code>", "Divider (no space needed)"],
 ], ["Type", "You get"])}
 """, 2)
+    sec("paste", "Pasting from AI, Notion or the web", f"""
+<p>Paste with {kbd('Ctrl', 'V')} and Markdown turns into real blocks: headings, toggles, lists, to-dos,
+code, dividers, callouts, colors, <b>bold</b>, <i>italic</i> and links. Indented lines go inside the line above them.</p>
+<p><b>Asking an AI for a page:</b> ask for "Markdown" or "Notion format". These are understood:</p>
+{table([
+    ["<code># Title</code> … <code>#### Title</code>", "Headings 1–4"],
+    ["<code>## ▶ Title</code>, <code>▶ ## Title</code>, <code>##&gt; Title</code>, <code>## Title {{toggle=\"true\"}}</code>",
+     "Toggle heading. The lines under it, up to the next heading of the same size, go inside."],
+    ["<code>▶ Text</code> or <code>&lt;details&gt;&lt;summary&gt;Text&lt;/summary&gt;…&lt;/details&gt;</code>", "Toggle"],
+    ["<code>- item</code>, <code>1. item</code>, <code>- [ ] task</code>, <code>- [x] done</code>", "Lists and to-dos"],
+    ["<code>&gt; 💡 text</code>, <code>&lt;callout icon=\"💡\"&gt;text&lt;/callout&gt;</code>, <code>&gt; [!NOTE]</code>", "Callout"],
+    ["<code>&gt; text</code>", "Quote"],
+    ["<code>&lt;span color=\"red\"&gt;text&lt;/span&gt;</code>, <code>color=\"mint background\"</code>",
+     "Colored words (any of the 20 color names, add <i>background</i> for a highlight)"],
+    ["<code>## Heading {{color=\"blue\"}}</code>", "Color a whole block"],
+    ["<code>```</code> fences, <code>---</code>, <code>| tables |</code>", "Code, divider. Tables become a lined-up code block."],
+], ["Write", "You get"])}
+{tip("A prompt that works well: <i>Write this as Markdown for Notion. Use ▶ toggle headings, - [ ] to-dos, "
+     "and &lt;span color=\"…\"&gt; for colors.</i>")}
+<p><b>Copying from a web page or a chat window</b> (selecting the text rather than using a Copy button) works too: the
+headings, lists, bold and links come across.</p>
+<p><b>Plain text:</b> {kbd('Ctrl', 'Shift', 'V')} pastes exactly what you copied, with no conversion.</p>
+<p><b>A whole file:</b> account menu → <b>Import Markdown file…</b> makes a new page from a <code>.md</code> file,
+for example a page exported from Notion.</p>
+<p>Not supported yet: images (they become links), real tables, columns and databases.</p>
+""", 2)
     sec("lists", "Lists and to-dos", f"""
 <p>Press Enter at the end of a list item to start the next one. Press Enter on an empty item to stop the list.</p>
 <p>{kbd('Tab')} nests an item under the one above, {kbd('Shift', 'Tab')} moves it back out.</p>

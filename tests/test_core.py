@@ -201,3 +201,42 @@ class CrashSafetyTests(unittest.TestCase):
             (self.dir / name).write_bytes(b"SECUREWRITYv1\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
         with self.assertRaises(crypto.DecryptionError):
             self._read()
+
+
+class MarkdownImportTests(unittest.TestCase):
+    def setUp(self):
+        from securewrity.core.markdown_import import parse_markdown
+        self.parse = parse_markdown
+
+    def test_toggle_heading_scope_and_nesting(self):
+        t = self.parse("▶ ## A\ntext\n- one\n  - nested\n## B\nafter")
+        self.assertEqual([b["type"] for b in t], ["toggle_h2", "h2", "paragraph"])
+        self.assertEqual([b["type"] for b in t[0]["children"]], ["paragraph", "bullet"])
+        self.assertEqual(t[0]["children"][1]["children"][0]["type"], "bullet")
+
+    def test_notion_flavoured(self):
+        t = self.parse('## Day {toggle="true" color="purple"}\n\t- <span color="red">rent</span>\n'
+                       '<callout icon="⚠️">Careful</callout>')
+        self.assertEqual(t[0]["type"], "toggle_h2")
+        self.assertEqual(t[0]["props"]["color"], "purple")
+        self.assertEqual(t[0]["children"][0]["content"], [{"t": "rent", "c": "red"}])
+        self.assertEqual((t[1]["type"], t[1]["props"]["emoji"]), ("callout", "⚠️"))
+
+    def test_inline_and_blocks(self):
+        t = self.parse("**b** *i* `c` [l](https://x) ~~s~~\n- [x] done\n---\n```py\nx = 1\n```\n#### h")
+        runs = t[0]["content"]
+        self.assertEqual([r for r in runs if r["t"] == "b"][0]["b"], 1)
+        self.assertEqual([r for r in runs if r["t"] == "l"][0]["link"], "https://x")
+        self.assertEqual([b["type"] for b in t], ["paragraph", "todo", "divider", "code", "h4"])
+        self.assertTrue(t[1]["props"]["checked"])
+        self.assertEqual(t[3]["content"][0]["t"], "x = 1")
+
+    def test_details_and_pastel_colors(self):
+        t = self.parse('<details><summary>Hi</summary>\ninside\n</details>\n'
+                       '<span color="pastel mint background">m</span>')
+        self.assertEqual((t[0]["type"], t[0]["children"][0]["content"][0]["t"]), ("toggle", "inside"))
+        self.assertEqual(t[1]["content"][0]["bg"], "mint")
+
+    def test_escapes_and_plain_text(self):
+        t = self.parse(r"price \*not italic\* and a_snake_case_name")
+        self.assertEqual(t[0]["content"], [{"t": "price *not italic* and a_snake_case_name"}])

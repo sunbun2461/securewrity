@@ -179,3 +179,15 @@ def split_runs(runs: list[dict], offset: int) -> tuple[list[dict], list[dict]]:
             right.append(dict(r, t=t[k:]))
         pos += len(t)
     return merge_runs(left), merge_runs(right)
+
+
+def html_to_markdown(html: str) -> str:
+    """Convert copied web content (a chat answer, a web page, Notion in a browser) to
+    Markdown using Qt's own converter, so headings, lists, bold and links survive."""
+    from PyQt6.QtGui import QTextDocument
+    doc = QTextDocument()
+    doc.setHtml(html)
+    try:
+        return doc.toMarkdown()
+    except Exception:
+        return doc.toPlainText()

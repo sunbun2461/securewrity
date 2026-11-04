@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):
         m.addAction("🎨  Toggle dark / light\tCtrl+Shift+L", self.toggle_theme)
         m.addAction("🧩  Plugins…", lambda: PluginsDialog(self.ctx.controller, self).exec())
         m.addAction("⌘  Command palette\tCtrl+Shift+P", self.command_palette)
+        m.addAction("📥  Import Markdown file…", self.import_markdown)
         m.addAction("❓  Help\tF1", self.show_help)
         app_cmds = [c for c in self.ctx.api.commands if c.scope == "app"]
         if app_cmds:
@@ -269,6 +270,7 @@ class MainWindow(QMainWindow):
             ("Plugins", lambda: PluginsDialog(self.ctx.controller, self).exec()),
             ("Lock", self.lock),
             ("Help", self.show_help),
+            ("Import Markdown file", self.import_markdown),
         ]
         for c in self.ctx.api.commands:
             builtin.append((c.label, lambda c=c: self._run(c)))
@@ -320,6 +322,39 @@ class MainWindow(QMainWindow):
         self.editor.save_now()
         TrashDialog(self.ctx, self).exec()
         self._refresh_pages()
+
+    def import_markdown(self, path: str | None = None):
+        """Make a new page from a .md file (an AI answer saved to a file, a Notion export…)."""
+        from pathlib import Path
+
+        from PyQt6.QtWidgets import QFileDialog
+
+        from ..core.markdown_import import parse_markdown
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(self, "Import Markdown", str(Path.home()),
+                                                  "Markdown (*.md *.markdown *.txt);;All files (*)")
+        if not path:
+            return None
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            self.notify(f"Couldn't read the file: {e}")
+            return None
+        blocks = parse_markdown(text)
+        title = Path(path).stem
+        if blocks and blocks[0]["type"] in ("h1", "toggle_h1") and not blocks[0]["children"]:
+            title = "".join(r["t"] for r in blocks.pop(0)["content"]) or title
+        # Notion export file names end in a 32-character id
+        import re
+        title = re.sub(r"\s+[0-9a-f]{32}$", "", title)
+        repo = self.ctx.repo
+        pid = repo.create_page(None, title)
+        repo.save_blocks(pid, blocks)
+        repo.commit()
+        self.ctx.events.emit("pages_changed")
+        self.open_page(pid)
+        self.notify(f"Imported “{title}”")
+        return pid
 
     def show_help(self, section: str | None = None):
         from .help import HelpWindow
