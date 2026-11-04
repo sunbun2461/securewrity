@@ -128,3 +128,76 @@ class RepoTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrashSafetyTests(unittest.TestCase):
+    """Simulate a crash at each step of saving an encrypted account."""
+
+    def setUp(self):
+        import os
+        from securewrity.core.storage import Store
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.dek = os.urandom(32)
+        self.Store = Store
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _save_version(self, text):
+        s = self.Store(self.dir, "acct", self.dek).open()
+        s.conn.execute("CREATE TABLE IF NOT EXISTS t (v TEXT)")
+        s.conn.execute("DELETE FROM t")
+        s.conn.execute("INSERT INTO t VALUES (?)", (text,))
+        s.close()
+
+    def _read(self):
+        s = self.Store(self.dir, "acct", self.dek).open()
+        v = s.conn.execute("SELECT v FROM t").fetchone()[0]
+        rec = s.recovered_from
+        s.conn.close()
+        return v, rec
+
+    def test_normal_save_keeps_backup(self):
+        self._save_version("one")
+        self._save_version("two")
+        self.assertEqual(self._read(), ("two", None))
+        self.assertTrue((self.dir / "data.securewrity.bak").exists())
+        self.assertFalse((self.dir / "data.securewrity.tmp").exists())
+
+    def test_crash_after_tmp_written_before_rename(self):
+        self._save_version("one")
+        self._save_version("two")
+        main = self.dir / "data.securewrity"
+        # the old (pre-fix) failure window: main renamed away, new data still in .tmp
+        main.rename(self.dir / "data.securewrity.tmp")
+        self.assertEqual(self._read(), ("two", "data.securewrity.tmp"))
+
+    def test_main_missing_uses_backup_never_blank(self):
+        self._save_version("one")
+        self._save_version("two")
+        (self.dir / "data.securewrity").unlink()
+        v, rec = self._read()
+        self.assertEqual((v, rec), ("one", "data.securewrity.bak"))
+
+    def test_damaged_main_uses_backup(self):
+        self._save_version("one")
+        self._save_version("two")
+        main = self.dir / "data.securewrity"
+        blob = bytearray(main.read_bytes())
+        blob[-5] ^= 0xFF
+        main.write_bytes(bytes(blob))
+        self.assertEqual(self._read(), ("one", "data.securewrity.bak"))
+
+    def test_half_written_tmp_is_ignored(self):
+        self._save_version("one")
+        (self.dir / "data.securewrity.tmp").write_bytes(b"SECUREWRITYv1\ngarbage")
+        self.assertEqual(self._read(), ("one", None))
+
+    def test_everything_damaged_raises(self):
+        self._save_version("one")
+        self._save_version("two")
+        for name in ("data.securewrity", "data.securewrity.bak"):
+            (self.dir / name).write_bytes(b"SECUREWRITYv1\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        with self.assertRaises(crypto.DecryptionError):
+            self._read()

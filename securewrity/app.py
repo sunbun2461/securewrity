@@ -96,6 +96,13 @@ class Controller:
         if self.login:
             self.login.hide()
         self.events.emit("app_ready", self.window)
+        if getattr(store, "recovered_from", None):
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.window, "Recovered your notes",
+                f"The main notes file was missing or damaged (probably a crash or power loss during a save), "
+                f"so your notes were opened from {store.recovered_from}. Anything typed in the last few seconds "
+                f"before the crash may be missing. The next save repairs the main file.")
 
     def _end_session(self):
         if not self.window:

@@ -37,6 +37,19 @@ To run it without installing: `python3 -m securewrity` from the repo folder. Nee
 | Auto-lock | 15 minutes idle by default for encrypted accounts (Settings). Ctrl+L locks immediately. |
 
 There is **no password recovery** without a credential. Use the recovery seed phrase option.
+
+What it does **not** protect against:
+
+- A weak password. scrypt makes each guess slow, but a short or common password can still be guessed offline.
+- Anyone (or any malware) using your computer while the account is unlocked.
+- Swap and hibernation. While unlocked, your notes are in memory and the system may write memory to disk.
+  Use encrypted swap, or full-disk encryption (the Kali installer offers "encrypted LVM").
+- Leftover plaintext after "encrypt later" on SSDs and journaling filesystems (see above).
+- Copies you make yourself: Markdown exports and anything copied to the clipboard.
+- Metadata: account names, which protection each account uses, file sizes and save times are visible.
+
+Saving is crash-safe: the new file is fully written before it replaces the old one, the previous
+version is kept as `.bak`, and on unlock a missing or damaged file falls back to the newest intact copy.
 Unprotected accounts (and Guest) are plain SQLite files, readable by anyone with access to your home directory.
 
 ## Writing a plugin

@@ -9,6 +9,7 @@ atomically to data.securewrity. No plaintext ever touches the disk.
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -17,7 +18,28 @@ from . import crypto
 MAGIC = b"SECUREWRITYv1\n"
 
 
+def _fsync_dir(directory: Path) -> None:
+    """Make renames inside a directory durable (no-op where unsupported)."""
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def _atomic_write(path: Path, data: bytes) -> None:
+    """Replace `path` with `data` so that a crash at any moment leaves either the
+    old file or the new one in place, never neither:
+
+    1. write the new data to <path>.tmp and fsync it
+    2. point <path>.bak at the current file (hard link, or copy), path untouched
+    3. atomically rename <path>.tmp over <path>
+    """
     tmp = path.with_suffix(path.suffix + ".tmp")
     with open(tmp, "wb") as f:
         f.write(data)
@@ -25,13 +47,19 @@ def _atomic_write(path: Path, data: bytes) -> None:
         os.fsync(f.fileno())
     os.chmod(tmp, 0o600)
     if path.exists():
-        # keep one previous version as a safety net
         bak = path.with_suffix(path.suffix + ".bak")
+        bak_tmp = path.with_suffix(path.suffix + ".bak.tmp")
         try:
-            os.replace(path, bak)
+            bak_tmp.unlink(missing_ok=True)
+            try:
+                os.link(path, bak_tmp)          # instant, path keeps existing
+            except OSError:
+                shutil.copyfile(path, bak_tmp)  # filesystems without hard links
+            os.replace(bak_tmp, bak)
         except OSError:
-            pass
+            pass  # a missing backup must never block saving
     os.replace(tmp, path)
+    _fsync_dir(path.parent)
 
 
 def _shred(path: Path) -> None:
@@ -58,6 +86,7 @@ class Store:
         self.dek = dek
         self.conn: sqlite3.Connection | None = None
         self.dirty = False
+        self.recovered_from: str | None = None  # set if the main file was missing or damaged
 
     # --- paths -------------------------------------------------------------
     @property
@@ -75,17 +104,42 @@ class Store:
     def _aad(self) -> bytes:
         return MAGIC + self.account_id.encode()
 
+    def _decrypt_file(self, path: Path) -> bytes:
+        blob = path.read_bytes()
+        if not blob.startswith(MAGIC):
+            raise crypto.DecryptionError(f"{path.name} is not a Securewrity vault file")
+        body = blob[len(MAGIC):]
+        nonce, ct = body[: crypto.NONCE_LEN], body[crypto.NONCE_LEN:]
+        return crypto.decrypt(self.dek, nonce, ct, self._aad())
+
+    def _read_vault(self) -> bytes | None:
+        """Decrypt the newest intact copy. The key was already checked against the
+        account's key slots, so a file that fails to decrypt is damaged, not locked
+        with another key. Order: the main file, a finished-but-not-renamed .tmp
+        (crash during save), then the previous version (.bak).
+        Returns None only for a brand-new account with no vault files at all."""
+        e = self.enc_path
+        candidates = [e, e.with_suffix(e.suffix + ".tmp"), e.with_suffix(e.suffix + ".bak")]
+        existing = [p for p in candidates if p.exists()]
+        if not existing:
+            return None
+        errors = []
+        for p in existing:
+            try:
+                data = self._decrypt_file(p)
+            except (crypto.DecryptionError, OSError, ValueError) as err:
+                errors.append(f"{p.name}: {err}")
+                continue
+            self.recovered_from = None if p == e else p.name
+            return data
+        raise crypto.DecryptionError("No readable copy of your notes: " + "; ".join(errors))
+
     # --- open/close --------------------------------------------------------
     def open(self) -> "Store":
         if self.encrypted:
             conn = sqlite3.connect(":memory:", check_same_thread=False)
-            if self.enc_path.exists():
-                blob = self.enc_path.read_bytes()
-                if not blob.startswith(MAGIC):
-                    raise crypto.DecryptionError("Not a Securewrity vault file")
-                body = blob[len(MAGIC):]
-                nonce, ct = body[: crypto.NONCE_LEN], body[crypto.NONCE_LEN:]
-                plaintext = crypto.decrypt(self.dek, nonce, ct, self._aad())
+            plaintext = self._read_vault()
+            if plaintext is not None:
                 conn.deserialize(plaintext)
             else:
                 # a brand-new empty in-memory DB has no pages and can't be serialized
@@ -136,7 +190,8 @@ class Store:
         self.conn.close()
         _atomic_write(self.plain_path, data)
         Path(str(self.plain_path) + ".bak").unlink(missing_ok=True)
-        for p in (self.enc_path, Path(str(self.enc_path) + ".bak")):
+        for suffix in ("", ".bak", ".tmp", ".bak.tmp"):
+            p = Path(str(self.enc_path) + suffix)
             p.unlink(missing_ok=True)
         self.dek = None
         self.open()
