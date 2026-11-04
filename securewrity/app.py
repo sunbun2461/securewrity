@@ -131,6 +131,10 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv
     if sys.version_info < (3, 11):
         sys.exit("Securewrity needs Python 3.11 or newer.")
+    # GTK's accessibility bridge (loaded through Qt's GTK theme integration) floods the
+    # terminal with harmless "atk-bridge ... unknown signature" / "AT-SPI" warnings on
+    # desktops without a matching accessibility service. Set NO_AT_BRIDGE=0 to keep it.
+    os.environ.setdefault("NO_AT_BRIDGE", "1")
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setDesktopFileName(APP_ID)
