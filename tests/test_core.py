@@ -240,3 +240,14 @@ class MarkdownImportTests(unittest.TestCase):
     def test_escapes_and_plain_text(self):
         t = self.parse(r"price \*not italic\* and a_snake_case_name")
         self.assertEqual(t[0]["content"], [{"t": "price *not italic* and a_snake_case_name"}])
+
+    def test_arrow_toggles_take_following_lines(self):
+        t = self.parse("▶ One\n\nfirst\n\n▶ Two\n\nsecond\n")
+        self.assertEqual([b["type"] for b in t], ["toggle", "toggle"])
+        self.assertEqual(t[0]["children"][0]["content"][0]["t"], "first")
+        self.assertEqual(t[1]["children"][0]["content"][0]["t"], "second")
+
+    def test_plain_toggles_nest_inside_toggle_headings(self):
+        t = self.parse("## ▶ Big\nintro\n▶ small\ninside\n## ▶ Next\nx")
+        self.assertEqual([b["type"] for b in t], ["toggle_h2", "toggle_h2"])
+        self.assertEqual([b["type"] for b in t[0]["children"]], ["paragraph", "toggle"])

@@ -167,8 +167,12 @@ code, dividers, callouts, colors, <b>bold</b>, <i>italic</i> and links. Indented
     ["<code>## Heading {{color=\"blue\"}}</code>", "Color a whole block"],
     ["<code>```</code> fences, <code>---</code>, <code>| tables |</code>", "Code, divider. Tables become a lined-up code block."],
 ], ["Write", "You get"])}
-{tip("A prompt that works well: <i>Write this as Markdown for Notion. Use ▶ toggle headings, - [ ] to-dos, "
-     "and &lt;span color=\"…\"&gt; for colors.</i>")}
+{tip("A prompt that works well: <i>Write this as Markdown for Notion. Write toggle headings as "
+     "<code>## ▶ Title</code> (one # per heading level), plain toggles as <code>▶ Text</code>, to-dos as "
+     "<code>- [ ]</code>, and colors as &lt;span color=\"red\"&gt;…&lt;/span&gt;. Give it to me in a code block.</i> "
+     "Then use the code block's Copy button.")}
+<p>A line starting with ▶ but no # becomes a regular-size toggle. The lines under it go inside, up to the next ▶ line
+or heading.</p>
 <p><b>Copying from a web page or a chat window</b> (selecting the text rather than using a Copy button) works too: the
 headings, lists, bold and links come across.</p>
 <p><b>Plain text:</b> {kbd('Ctrl', 'Shift', 'V')} pastes exactly what you copied, with no conversion.</p>

@@ -24,6 +24,7 @@ from ..ui import theme
 
 TOGGLE_GLYPHS = "▶▸►▷⏵▼▾"
 MAX_HEADING = 4
+TOGGLE_RANK = MAX_HEADING + 1  # a plain toggle ranks below every heading when deciding what nests
 
 # --- colors -------------------------------------------------------------------------------
 
@@ -257,6 +258,8 @@ def _classify(line: str) -> tuple[dict, int | None]:
         b = _block("paragraph", line)
     if toggle_attr and b["type"] in ("paragraph", "bullet"):
         b = {**b, "type": "toggle", "props": {"collapsed": False}}
+    if b["type"] == "toggle":
+        hlevel = TOGGLE_RANK
     _apply_block_color(b, attrs)
     return b, hlevel
 
@@ -442,7 +445,7 @@ def parse_markdown(text: str) -> list[dict]:
         block, hlevel = _classify(line)
         scope = False
         if hlevel:
-            # toggle heading followed by un-indented content: that content belongs inside it
+            # a toggle (heading) followed by un-indented content: that content belongs inside it
             nxt = next((ln for ln in lines[i:] if ln.strip()), "")
             scope = _indent_width(nxt) <= _indent_width(raw)
         attach(block, indent, hlevel=hlevel, scope=scope)
@@ -450,9 +453,12 @@ def parse_markdown(text: str) -> list[dict]:
 
 
 def _heading_level(block) -> int | None:
+    """Rank used to end a toggle's scope: headings 1-4, then plain toggles."""
     t = block["type"]
     if re.match(r"^(toggle_)?h\d$", t):
         return int(t[-1])
+    if t == "toggle":
+        return TOGGLE_RANK
     return None
 
 
@@ -460,9 +466,12 @@ def _can_hold(block) -> bool:
     return block["type"] not in ("code", "divider", f"h1", "h2", "h3", "h4")
 
 
-def looks_like_markdown(text: str) -> bool:
-    """Does a pasted snippet use Markdown/Notion syntax worth converting?"""
-    if re.search(r"^\s*(#{1,6}>?\s|>#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|```|---\s*$|\|.*\|\s*$|[▶▸]\s)", text, re.M):
+def looks_like_markdown(text: str, glyphs: bool = True) -> bool:
+    """Does a pasted snippet use Markdown/Notion syntax worth converting?
+    glyphs=False ignores lines that only start with a ▶ toggle arrow."""
+    glyph = "|[▶▸►]\\s" if glyphs else ""
+    if re.search(r"^\s*(#{1,6}>?\s|>#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s?|```|---\s*$|\|.*\|\s*$" + glyph + ")",
+                 text, re.M):
         return True
     if re.search(r"<(details|callout|aside|span|summary|empty-block)\b", text):
         return True

@@ -641,10 +641,14 @@ class PageEditor(QWidget):
                 bw.text.insertPlainText(text)
             return
         source = None
-        if looks_like_markdown(text):
-            source = text
-        elif html and re.search(r"<(h[1-6]|li|pre|blockquote|strong|b|em|i|a\s|table|details)\b", html, re.I):
+        rich_html = bool(html) and re.search(r"<(h[1-6]|li|pre|blockquote|strong|b|em|i|a\s|table|details)\b",
+                                             html, re.I)
+        # Text copied from a rendered page (a chat answer) has no Markdown marks, only maybe ▶ arrows;
+        # its HTML still knows which lines are headings, so prefer that.
+        if rich_html and not looks_like_markdown(text, glyphs=False):
             source = html_to_markdown(html) or text
+        elif looks_like_markdown(text):
+            source = text
         elif "\n" in text.strip():
             source = text
         if source is None:
