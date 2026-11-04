@@ -17,7 +17,12 @@ fi
 
 if [[ "${1:-}" != "--no-apt" ]]; then
   echo "==> Installing dependencies with apt (needs sudo)"
-  sudo apt-get update
+  # A broken third-party source (e.g. a missing signing key) makes apt-get update
+  # exit non-zero even when the Kali/Debian lists refreshed fine, so don't stop here.
+  if ! sudo apt-get update; then
+    echo "!!  apt-get update reported errors (often an unrelated third-party repository)."
+    echo "    Continuing with the install; it only fails if the packages below can't be found."
+  fi
   sudo apt-get install -y python3 python3-pyqt6 python3-cryptography fonts-noto-color-emoji
 fi
 
