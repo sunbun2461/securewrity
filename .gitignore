@@ -7,6 +7,6 @@ build/
 dist/
 .DS_Store
 # never commit note data
-*.folio
-*.folio.bak
+*.securewrity
+*.securewrity.bak
 data.db

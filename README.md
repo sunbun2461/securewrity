@@ -1,10 +1,10 @@
-# Folio
+# Securewrity
 
 A lightweight, local, Notion-style notebook for Linux (built and tested for Debian / Kali).
 Native Qt desktop app: no browser, no server, no cloud.
 
-- **Toggle headings** (H1–H3) and toggle lists that fold everything inside them
-- **Colors**: text and background color per block, or for selected words
+- **Toggle headings** (H1–H4) and regular-size toggles that fold everything inside them
+- **Colors**: 20 colors (10 regular, 10 pastel) for text or background, per block or for selected words
 - **Pages inside pages**, any depth, with a draggable **sidebar** tree, favorites and trash
 - **Links**: sub-page blocks, “link to page” blocks, inline `[[` links, and a “Linked from” backlinks list
 - Headings, bullets, numbered lists, to-dos, quotes, callouts, code, dividers
@@ -12,17 +12,18 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Accounts**: a Guest account (no password) plus any number of user accounts
 - **Encryption**, optional and available at any time: password, passphrase (can be generated) or a
   generated **seed phrase** (12/24-word BIP39), or a mix of them (e.g. password + recovery seed phrase)
-- **Plugins**: drop a `.py` file into `~/.local/share/folio/plugins/`
+- **Help** (F1, the ? button, or Help in the sidebar): searchable docs with screenshots and a clickable contents list
+- **Plugins**: drop a `.py` file into `~/.local/share/securewrity/plugins/`
 
 ## Install (Kali / Debian)
 
 ```bash
-git clone <this repo> ~/folio && cd ~/folio
+git clone <this repo> ~/securewrity && cd ~/securewrity
 ./install.sh          # apt installs python3-pyqt6, python3-cryptography, emoji font; adds menu entry
-folio                 # or launch "Folio" from the app menu
+securewrity                 # or launch "Securewrity" from the app menu
 ```
 
-To run it without installing: `python3 -m folio` from the repo folder. Needs Python 3.11+.
+To run it without installing: `python3 -m securewrity` from the repo folder. Needs Python 3.11+.
 
 ## Security model
 
@@ -31,7 +32,7 @@ To run it without installing: `python3 -m folio` from the repo folder. Needs Pyt
 | Cipher | AES-256-GCM (authenticated, so tampering is detected) |
 | Key derivation | scrypt (N=2¹⁷, r=8, p=1, ~128 MiB) per credential |
 | Key layout | A random data key encrypts the database. Each credential (password, passphrase, seed) wraps a copy of that key. Changing your password or adding a recovery phrase never re-encrypts your notes. |
-| At rest | `~/.local/share/folio/users/<name>/data.folio`. While unlocked, the database exists **only in memory**. Every save writes a freshly encrypted file atomically and keeps one `.bak`. |
+| At rest | `~/.local/share/securewrity/users/<name>/data.securewrity`. While unlocked, the database exists **only in memory**. Every save writes a freshly encrypted file atomically and keeps one `.bak`. |
 | Encrypt later | Converts the plain `data.db` to an encrypted file, then overwrites and deletes the plaintext (best effort: SSDs and journaling filesystems may keep old blocks, so use full-disk encryption too). |
 | Auto-lock | 15 minutes idle by default for encrypted accounts (Settings). Ctrl+L locks immediately. |
 
@@ -41,30 +42,32 @@ Unprotected accounts (and Guest) are plain SQLite files, readable by anyone with
 ## Writing a plugin
 
 ```python
-# ~/.local/share/folio/plugins/hello.py
+# ~/.local/share/securewrity/plugins/hello.py
 PLUGIN = {"name": "Hello", "version": "1.0", "description": "Example"}
 
 def register(api):
     api.add_command("Say hello", lambda: api.notify("Hello!"), shortcut="Ctrl+Alt+H")
     api.add_page_command("Count blocks", lambda page_id: api.notify(str(len(api.repo.get_blocks(page_id)))))
     api.events.on("page_saved", lambda page_id: ...)
+    api.add_help_section("Hello", "<p>Shows up in the Help window.</p>")
 ```
 
 Plugins can also add whole new **block types** (they appear in the `/` menu automatically).
-See `folio/blocks/registry.py` and `folio/blocks/builtin.py`. Full API: `folio/plugin_api.py`.
-Bundled examples are in `folio/plugins/`: Markdown export, daily journal (Ctrl+Shift+J), word count.
+See `securewrity/blocks/registry.py` and `securewrity/blocks/builtin.py`. Full API: `securewrity/plugin_api.py`.
+Bundled examples are in `securewrity/plugins/`: Markdown export, daily journal (Ctrl+Shift+J), word count.
 Enable or disable plugins in the account menu → Plugins.
 
 ## Project layout
 
 ```
-folio/
+securewrity/
   core/       crypto, seed phrases, accounts, encrypted storage, data access (no GUI code)
   blocks/     block-type registry + built-in block types   ← extend here
   ui/         Qt windows: login, protection wizard, sidebar, editor, dialogs, theme
   plugins/    bundled plugins
   plugin_api.py, app.py
 tests/        python3 -m unittest discover -s tests -t .
+tools/        help_screenshots.py regenerates the Help pictures (securewrity/data/help/)
 ```
 
 ## Known limitations (v0.1)

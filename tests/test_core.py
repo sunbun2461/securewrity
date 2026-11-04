@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from folio.core import crypto
-from folio.core.accounts import AccountError, AccountManager
-from folio.core.repo import Repo
-from folio.core.seed import generate_passphrase, generate_seed_phrase, validate_seed_phrase
+from securewrity.core import crypto
+from securewrity.core.accounts import AccountError, AccountManager
+from securewrity.core.repo import Repo
+from securewrity.core.seed import generate_passphrase, generate_seed_phrase, validate_seed_phrase
 
 FAST_KDF = {"name": "scrypt", "n": 2 ** 10, "r": 8, "p": 1}
 crypto.DEFAULT_KDF = FAST_KDF  # keep tests quick
@@ -57,7 +57,7 @@ class AccountTests(unittest.TestCase):
                                 "props": {"collapsed": True},
                                 "children": [{"type": "paragraph", "content": [{"t": "inside", "b": 1}]}]}])
         store.close()
-        blob = (acc.directory / "data.folio").read_bytes()
+        blob = (acc.directory / "data.securewrity").read_bytes()
         self.assertNotIn(b"Secret plans", blob)
         self.assertFalse((acc.directory / "data.db").exists())
 
