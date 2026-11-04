@@ -298,8 +298,8 @@ def parse_markdown(text: str) -> list[dict]:
             if top["sticky"]:
                 break
             if top["hlevel"] and top["scope"] and indent == top["indent"]:
-                lvl = _heading_level(block)
-                if lvl is not None and lvl <= top["hlevel"]:
+                # an un-indented toggle takes the lines below it only up to the next heading or toggle
+                if _heading_level(block) is not None:
                     stack.pop()
                     continue
                 break
@@ -430,6 +430,13 @@ def parse_markdown(text: str) -> list[dict]:
                 body.append(lines[i].strip()[1:].lstrip())
                 i += 1
             first = body[0]
+            if first[:1] and first[0] in TOGGLE_GLYPHS:
+                tb, hl = _classify(first)
+                attach(tb, indent, hlevel=hl, scope=True)
+                for extra in body[1:]:
+                    if extra.strip():
+                        attach(_classify(extra)[0], indent + 1)
+                continue
             if am := re.match(r"^\[!(\w+)\]\s*(.*)$", first):
                 emoji = _ALERTS.get(am.group(1).lower(), "💡")
                 rest = [am.group(2)] + body[1:]

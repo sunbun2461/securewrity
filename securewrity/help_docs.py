@@ -157,7 +157,7 @@ code, dividers, callouts, colors, <b>bold</b>, <i>italic</i> and links. Indented
 {table([
     ["<code># Title</code> … <code>#### Title</code>", "Headings 1–4"],
     ["<code>## ▶ Title</code>, <code>▶ ## Title</code>, <code>##&gt; Title</code>, <code>## Title {{toggle=\"true\"}}</code>",
-     "Toggle heading. The lines under it, up to the next heading of the same size, go inside."],
+     "Toggle heading. The lines under it, up to the next heading or toggle, go inside."],
     ["<code>▶ Text</code> or <code>&lt;details&gt;&lt;summary&gt;Text&lt;/summary&gt;…&lt;/details&gt;</code>", "Toggle"],
     ["<code>- item</code>, <code>1. item</code>, <code>- [ ] task</code>, <code>- [x] done</code>", "Lists and to-dos"],
     ["<code>&gt; 💡 text</code>, <code>&lt;callout icon=\"💡\"&gt;text&lt;/callout&gt;</code>, <code>&gt; [!NOTE]</code>", "Callout"],

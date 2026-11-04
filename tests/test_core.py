@@ -247,7 +247,11 @@ class MarkdownImportTests(unittest.TestCase):
         self.assertEqual(t[0]["children"][0]["content"][0]["t"], "first")
         self.assertEqual(t[1]["children"][0]["content"][0]["t"], "second")
 
-    def test_plain_toggles_nest_inside_toggle_headings(self):
-        t = self.parse("## ▶ Big\nintro\n▶ small\ninside\n## ▶ Next\nx")
-        self.assertEqual([b["type"] for b in t], ["toggle_h2", "toggle_h2"])
-        self.assertEqual([b["type"] for b in t[0]["children"]], ["paragraph", "toggle"])
+    def test_toggles_in_a_row_stay_siblings(self):
+        t = self.parse("# ▶ One\n\n## ▶ Two\n\n### ▶ Three\n\n> ▶ Plain")
+        self.assertEqual([b["type"] for b in t], ["toggle_h1", "toggle_h2", "toggle_h3", "toggle"])
+        self.assertTrue(all(not b["children"] for b in t))
+        t = self.parse("## ▶ Big\nintro\n▶ small\ninside small")
+        self.assertEqual([b["type"] for b in t], ["toggle_h2", "toggle"])
+        self.assertEqual([c["content"][0]["t"] for c in t[0]["children"]], ["intro"])
+        self.assertEqual([c["content"][0]["t"] for c in t[1]["children"]], ["inside small"])
