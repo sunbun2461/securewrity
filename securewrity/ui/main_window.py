@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
         """Import .md files, a folder of them, or a Notion export .zip as pages and sub-pages."""
         from PyQt6.QtWidgets import QApplication, QFileDialog
 
-        from ..core.md_tree import import_paths
+        from ..core.md_tree import count_pages, import_paths
         if isinstance(paths, (str, Path)):
             paths = [paths]
         if not paths:
@@ -346,10 +346,31 @@ class MainWindow(QMainWindow):
         if not paths:
             return None
         self.editor.save_now()
+        import logging
+        log = logging.getLogger("securewrity.import")
+        log.info("import %s into %s", list(map(str, paths)), parent_id or "top level")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            planned = count_pages(paths)
+            log.info("import would create %d pages", planned)
+        except (OSError, ValueError) as e:
+            QApplication.restoreOverrideCursor()
+            self.notify(f"Couldn't import: {e}")
+            return None
+        QApplication.restoreOverrideCursor()
+        if planned > 50:
+            from PyQt6.QtWidgets import QMessageBox
+            names = ", ".join(Path(p).name for p in paths[:3])
+            if QMessageBox.question(
+                    self, "Import Markdown",
+                    f"{names} holds {planned} Markdown pages. Import all of them?") \
+                    != QMessageBox.StandardButton.Yes:
+                return None
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             tops, count = import_paths(self.ctx.repo, paths, parent_id)
         except (OSError, ValueError) as e:  # zipfile.BadZipFile is a ValueError
+            log.exception("import failed")
             self.notify(f"Couldn't import: {e}")
             return None
         finally:
@@ -357,6 +378,7 @@ class MainWindow(QMainWindow):
         if not tops:
             self.notify("No Markdown pages found there")
             return None
+        log.info("imported %d pages", count)
         self.ctx.events.emit("pages_changed")
         self.open_page(tops[0])
         self.notify(f"Imported {count} page{'s' if count != 1 else ''}")

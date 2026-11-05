@@ -126,9 +126,40 @@ class Controller:
         self.app.quit()
 
 
+def _setup_logging():
+    """Log to the terminal and to <data folder>/securewrity.log (kept at ~1 MB x 3).
+
+    The file never holds note contents: only startups, imports, warnings and crashes.
+    """
+    import faulthandler
+    from logging.handlers import RotatingFileHandler
+
+    from .core.accounts import default_root
+    fmt = "%(asctime)s [pid %(process)d] %(levelname)s %(name)s: %(message)s"
+    handlers = [logging.StreamHandler()]
+    log_path = None
+    try:
+        root = default_root()
+        root.mkdir(parents=True, exist_ok=True)
+        log_path = root / "securewrity.log"
+        handlers.append(RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=2, encoding="utf-8"))
+        # hard crashes (segfaults, stack overflows) dump their Python traceback here too
+        faulthandler.enable(open(root / "crash.log", "a", encoding="utf-8"), all_threads=True)
+    except OSError:
+        pass
+    logging.basicConfig(level=logging.INFO, format=fmt, handlers=handlers)
+
+    def excepthook(kind, value, tb):
+        logging.getLogger("securewrity").critical("Unhandled error", exc_info=(kind, value, tb))
+    sys.excepthook = excepthook
+    return log_path
+
+
 def main(argv=None):
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    log_path = _setup_logging()
     argv = argv if argv is not None else sys.argv
+    logging.getLogger("securewrity").info("start: parent pid %s, args %s, log %s",
+                                          os.getppid(), argv, log_path)
     if sys.version_info < (3, 11):
         sys.exit("Securewrity needs Python 3.11 or newer.")
     # GTK's accessibility bridge (loaded through Qt's GTK theme integration) floods the

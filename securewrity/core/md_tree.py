@@ -22,6 +22,7 @@ from urllib.parse import unquote
 from .markdown_import import parse_markdown
 
 MD_SUFFIXES = {".md", ".markdown"}
+MAX_PAGES = 5000
 _NOTION_ID = re.compile(r"\s+[0-9a-f]{32}$", re.I)
 
 
@@ -40,14 +41,20 @@ def blocks_and_title(text: str, fallback: str) -> tuple[list[dict], str]:
 
 
 class _Importer:
-    def __init__(self, repo):
+    def __init__(self, repo, dry_run: bool = False):
         self.repo = repo
+        self.dry_run = dry_run  # count what would be made, touch nothing
+        self.seen_dirs: set[Path] = set()
         self.by_path: dict[Path, str] = {}           # resolved .md path → page id
         self.pending: list[tuple[str, Path, list[dict]]] = []  # (page id, file, blocks)
         self.count = 0
 
     def _new_page(self, parent_id, title):
         self.count += 1
+        if self.count > MAX_PAGES:
+            raise ValueError(f"more than {MAX_PAGES} pages; pick a smaller folder")
+        if self.dry_run:
+            return f"dry{self.count}"
         return self.repo.create_page(parent_id, title, commit=False)
 
     def file(self, path: Path, parent_id):
@@ -55,6 +62,10 @@ class _Importer:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return None
+        if self.dry_run:
+            pid = self._new_page(parent_id, path.stem)
+            self.pending.append((pid, path, []))
+            return pid
         blocks, title = blocks_and_title(text, path.stem)
         pid = self._new_page(parent_id, title)
         self.by_path[path.resolve()] = pid
@@ -62,8 +73,11 @@ class _Importer:
         return pid
 
     def folder_contents(self, folder: Path, parent_id):
-        entries = sorted((p for p in folder.iterdir() if not p.name.startswith((".", "__MACOSX"))),
-                         key=lambda p: p.name.lower())
+        real = folder.resolve()
+        if real in self.seen_dirs:  # a folder shortcut pointing back up would loop forever
+            return
+        self.seen_dirs.add(real)
+        entries = sorted(_entries(folder), key=lambda p: p.name.lower())
         files = [p for p in entries if p.is_file() and p.suffix.lower() in MD_SUFFIXES]
         dirs = {p.name: p for p in entries if p.is_dir()}
         for f in files:
@@ -77,6 +91,8 @@ class _Importer:
 
     def finish(self):
         """Second pass: now every page exists, point links at pages and save the blocks."""
+        if self.dry_run:
+            return
         for pid, path, blocks in self.pending:
             self._fix_links(blocks, path.parent, pid)
             self.repo.save_blocks(pid, blocks, commit=False)
@@ -107,8 +123,25 @@ class _Importer:
             self._fix_links(b["children"], base, page_id)
 
 
-def _has_markdown(folder: Path) -> bool:
-    return any(p.suffix.lower() in MD_SUFFIXES for p in folder.rglob("*") if p.is_file())
+def _entries(folder: Path):
+    """Folder contents, skipping hidden files, macOS zip junk and symlinks (which can loop)."""
+    try:
+        return [p for p in folder.iterdir()
+                if not p.name.startswith((".", "__MACOSX")) and not p.is_symlink()]
+    except OSError:
+        return []
+
+
+def _has_markdown(folder: Path, depth: int = 0) -> bool:
+    if depth > 40:
+        return False
+    for p in _entries(folder):
+        if p.is_dir():
+            if _has_markdown(p, depth + 1):
+                return True
+        elif p.suffix.lower() in MD_SUFFIXES:
+            return True
+    return False
 
 
 def _extract_zip(path: Path, into: Path):
@@ -123,12 +156,18 @@ def _extract_zip(path: Path, into: Path):
         inner.unlink()
 
 
-def import_paths(repo, paths, parent_id: str | None = None) -> tuple[list[str], int]:
+def count_pages(paths) -> int:
+    """How many pages import_paths would create (to warn before a huge import)."""
+    return import_paths(None, paths, dry_run=True)[1]
+
+
+def import_paths(repo, paths, parent_id: str | None = None, dry_run: bool = False) -> tuple[list[str], int]:
     """Import .md files, folders and .zip exports under `parent_id` (None = top level).
 
     Returns (ids of the new top pages, total pages created). One save at the end.
+    Raises ValueError past MAX_PAGES so a wrong pick (like your home folder) can't run away.
     """
-    imp = _Importer(repo)
+    imp = _Importer(repo, dry_run)
     tops: list[str] = []
     with tempfile.TemporaryDirectory(prefix="securewrity-import-") as tmp:
         for i, raw in enumerate(paths):
@@ -148,14 +187,15 @@ def import_paths(repo, paths, parent_id: str | None = None) -> tuple[list[str], 
                     if sub.is_dir():  # "Trip.md" picked with a "Trip/" folder beside it
                         imp.folder_contents(sub, pid)
         imp.finish()  # files in the temp folder are read before it is removed
-    repo.commit()
+    if not dry_run:
+        repo.commit()
     return tops, imp.count
 
 
 def _import_folder(imp: _Importer, folder: Path, name: str, parent_id) -> list[str]:
     """A folder holding one top page (a typical Notion export) imports as that page;
     a folder of several notes is wrapped in a page named after the folder."""
-    items = [p for p in folder.iterdir() if not p.name.startswith((".", "__MACOSX"))]
+    items = _entries(folder)
     md = [p for p in items if p.is_file() and p.suffix.lower() in MD_SUFFIXES]
     dirs = [p for p in items if p.is_dir() and _has_markdown(p)]
     if len(md) == 1 and all(d.name == md[0].stem for d in dirs):
