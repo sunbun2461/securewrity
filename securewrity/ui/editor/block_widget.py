@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QFontMetrics, QTextCursor
-from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy, QTextEdit,
+from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QSizePolicy, QTextEdit,
                              QToolButton, QVBoxLayout, QWidget)
 
 from ...blocks.registry import registry
@@ -78,12 +78,47 @@ class BlockTextEdit(QTextEdit):
     def dropEvent(self, e):
         e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dropEvent(e)
 
+    # mouse: a press on a selected block may start dragging the selection; dragging out of
+    # this block while highlighting text switches to selecting whole blocks
+    _sel_press = None
+    _ranging = False
+
+    def mousePressEvent(self, e):
+        ed = self.bw.editor
+        self._ranging = False
+        if e.button() == Qt.MouseButton.LeftButton and ed.is_in_selection(self.bw):
+            self._sel_press = e.position().toPoint()
+            return
+        self._sel_press = None
+        super().mousePressEvent(e)
+
     def mouseMoveEvent(self, e):
+        ed = self.bw.editor
+        if self._sel_press is not None:
+            if (e.position().toPoint() - self._sel_press).manhattanLength() >= QApplication.startDragDistance():
+                self._sel_press = None
+                ed.start_drag(self.bw)
+            return
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            y = e.position().y()
+            if self._ranging or y < -4 or y > self.viewport().height() + 4:
+                self._ranging = True
+                ed.select_range(self.bw, ed.block_at(e.globalPosition().toPoint()))
+                return
         anchor = self.anchorAt(e.pos())
         self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if anchor else Qt.CursorShape.IBeamCursor)
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
+        if self._sel_press is not None:  # a plain click on a selected block: back to typing there
+            pos, self._sel_press = self._sel_press, None
+            self.bw.editor.clear_selection()
+            self.setFocus()
+            self.setTextCursor(self.cursorForPosition(pos))
+            return
+        if self._ranging:
+            self._ranging = False
+            return
         super().mouseReleaseEvent(e)
         anchor = self.anchorAt(e.pos())
         if anchor and e.button() == Qt.MouseButton.LeftButton and not self.textCursor().hasSelection():

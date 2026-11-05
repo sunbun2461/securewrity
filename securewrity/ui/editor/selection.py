@@ -1,4 +1,5 @@
-"""Selecting whole blocks: Ctrl+A twice (whole page), Esc (this block), Shift+click a ⋮⋮ handle.
+"""Selecting whole blocks: drag the mouse across blocks (or down the page margin), Ctrl+A twice
+(whole page), Esc (this block), Shift+click a ⋮⋮ handle. Drag any selected block to move them all.
 
 While blocks are selected the editor itself has keyboard focus:
   Backspace / Delete  delete them        Ctrl+C / Ctrl+X  copy / cut them
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QMimeData, Qt
+from PyQt6.QtCore import QMimeData, QPoint, Qt
 from PyQt6.QtWidgets import QApplication
 
 BLOCKS_MIME = "application/x-securewrity-blocks"
@@ -58,7 +59,34 @@ class SelectionMixin:
             self.toolbar.hide()
             self.slash.close_menu()
             self.setFocus(Qt.FocusReason.OtherFocusReason)
-            self.scroll.ensureWidgetVisible(blocks[0].row, 0, 60)
+
+    def is_in_selection(self, bw) -> bool:
+        sel = getattr(self, "_selected", None)
+        return bool(sel) and (id(bw) in sel or any(id(a) in sel for a in bw.ancestors()))
+
+    def block_at(self, global_pos):
+        """The visible block whose row is at (or nearest to) a screen point."""
+        vis = self.visible_blocks()
+        if not vis:
+            return None
+        y = self._canvas.mapFromGlobal(global_pos).y()
+        for b in vis:
+            top = b.row.mapTo(self._canvas, QPoint(0, 0)).y()
+            if y < top + b.row.height():
+                return b
+        return vis[-1]
+
+    def select_range(self, a, b):
+        """Select every visible block from a to b (either order), as mouse-dragging does."""
+        if a is None or b is None:
+            return
+        vis = self.visible_blocks()
+        if a not in vis or b not in vis:
+            return
+        i, j = sorted((vis.index(a), vis.index(b)))
+        blocks = vis[i:j + 1]
+        if {id(x) for x in blocks} != getattr(self, "_selected", set()):
+            self.select_blocks(blocks)
 
     def toggle_selected(self, bw):
         sel = set(getattr(self, "_selected", set()))
@@ -67,6 +95,8 @@ class SelectionMixin:
 
     def select_all_blocks(self):
         self.select_blocks(self.all_blocks())
+        if self.blocks:
+            self.scroll.ensureWidgetVisible(self.blocks[0].row, 0, 60)
 
     def clear_selection(self, refocus: bool = False):
         sel = getattr(self, "_selected", None)

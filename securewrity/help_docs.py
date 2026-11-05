@@ -266,21 +266,30 @@ Duplicate, Move up / down, Indent / Outdent, Select and Delete. Right-clicking t
 ], ["Keys", "Does"])}
 """, 1)
     sec("drag", "Dragging blocks (and into toggles)", f"""
-<p>Press on a block's ⋮⋮ handle and drag. A blue line shows where it will land; let go to drop it there.</p>
+<p>Press on a block's ⋮⋮ handle and drag. A blue line shows where it will land; let go to drop it there.
+<b>To move several blocks</b>, highlight them first (see <i>Selecting blocks</i> below), then press on any of the
+highlighted blocks and drag. A badge shows how many are coming along.</p>
 {img("drag.png", "Dragging onto a toggle: the line is indented, so the block goes inside it")}
 {table([
     ["Over the top part of a block", "Drops above it"],
     ["Over a toggle", "Drops <b>inside</b> it, as its first item (the line is indented). A closed toggle opens."],
     ["Over the bottom part of a block", "Drops below it"],
+    ["Over the bottom part of a block, pointer moved to the right of where its text starts",
+     "Drops <b>inside</b> that block, indented under it (the line is indented). Works for text, lists, "
+     "quotes and callouts; headings, code and dividers can't hold blocks."],
     ["Below the last block", "Drops at the end of the page"],
 ], ["Line shows when you are", "Result"])}
 {tip("To get a block back out of a toggle, drag it to the top part of a block outside the toggle, "
      "or press " + kbd('Shift', 'Tab') + ".")}
-<p>Dragging a selected block moves every selected block together. Near the top or bottom of the window the page
-scrolls by itself.</p>
+<p>Near the top or bottom of the window the page scrolls by itself while you drag. Changed your mind?
+{kbd('Ctrl', 'Z')} puts everything back.</p>
 """, 2)
     sec("select", "Selecting blocks: the whole page, delete, copy", f"""
 {img("select.png", "Selected blocks are tinted blue")}
+<p><b>With the mouse:</b> start highlighting text in a block and keep dragging up or down past it; once you leave
+the block, whole blocks highlight instead. You can also press in the empty space to the left or right of the
+blocks and drag up or down. Then drag any highlighted block to move them all, or press {kbd('Backspace')}.</p>
+<p><b>With the keyboard:</b></p>
 {steps(
     "Press " + kbd('Ctrl', 'A') + " once to select the text in the block you are in.",
     "Press " + kbd('Ctrl', 'A') + " again to select <b>every block on the page</b>.",
@@ -289,7 +298,7 @@ scrolls by itself.</p>
 <p>Other ways to select: {kbd('Esc')} selects the block you are typing in, and {kbd('Shift')}+click on ⋮⋮ handles
 adds or removes blocks one at a time. Page ⋯ menu → <b>Select all blocks</b> does the same as Ctrl+A twice.</p>
 <p>Copied blocks paste back as real blocks (toggles, colors and all) anywhere in Securewrity, and as plain text in
-other apps. {kbd('Esc')} or a click in the text stops selecting.</p>
+other apps. {kbd('Esc')}, or a click (without dragging) on a block, stops selecting.</p>
 """, 2)
     sec("undo", "Undo and redo", f"""
 {img("undo.png", "The undo and redo arrows, top right of every page")}

@@ -1,22 +1,24 @@
-"""Drag blocks by their ⋮⋮ handle: reorder them, or drop them into a toggle.
+"""Drag blocks by their ⋮⋮ handle (or a selection by any selected block): reorder them, or drop them inside another block.
 
 Where a block lands is shown by a blue line while dragging:
   * top part of a block          → above it
   * a toggle (most of its row)   → inside it, as the first item (line is indented)
-  * bottom part of other blocks  → below it (inside it if it has indented items showing)
+  * bottom part of other blocks  → below it; move the pointer right (past the start of the
+                                   text) and it goes inside that block instead (line is indented)
   * below the last block         → end of the page
 Dragging a block that is part of a selection moves the whole selection.
 """
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, QMimeData, QPoint, Qt
-from PyQt6.QtGui import QDrag, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QDrag, QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication, QFrame, QToolButton
 
 from .. import theme
 
 DRAG_MIME = "application/x-securewrity-drag"
 CHILD_INDENT = 26
+NEST_SHIFT = 50  # px right of a block's text start that means "put it inside this block"
 
 
 class DragHandle(QToolButton):
@@ -67,8 +69,7 @@ class DragDropMixin:
         self._drop_at = None
 
     def start_drag(self, bw):
-        tops = self.selected_blocks() if self.has_selection() and any(
-            b is bw for b in self.selected_blocks()) else [bw]
+        tops = self.selected_blocks() if self.is_in_selection(bw) else [bw]
         self.save_now()
         self._dragging = tops
         mime = QMimeData()
@@ -81,6 +82,17 @@ class DragDropMixin:
         p = QPainter(faded)
         p.setOpacity(0.6)
         p.drawPixmap(0, 0, pix)
+        if len(tops) > 1:  # badge: how many blocks are coming along
+            p.setOpacity(1.0)
+            label = f"{len(tops)} blocks"
+            fm = p.fontMetrics()
+            r = fm.boundingRect(label).adjusted(-7, -3, 7, 3)
+            r.moveTopRight(QPoint(pix.width() - 4, 2))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(theme.t("accent")))
+            p.drawRoundedRect(r, 8, 8)
+            p.setPen(QColor("white"))
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, label)
         p.end()
         drag.setPixmap(faded)
         drag.setHotSpot(QPoint(10, min(12, pix.height() // 2)))
@@ -122,8 +134,11 @@ class DragDropMixin:
             return hit.parent_block, idx, x0, top
         if hit.btype.toggle and not (hit.is_collapsed() and frac > 0.75):
             return hit, 0, x0 + CHILD_INDENT, top + h
-        if hit.children and not hit.is_collapsed() and hit.btype.can_have_children:
-            return hit, 0, x0 + CHILD_INDENT, top + h
+        if hit.btype.can_have_children and not hit.is_collapsed():
+            # under its own indented items, or pointer moved right past the text start: nest inside it
+            text_x = (hit.text.mapTo(self._canvas, QPoint(0, 0)).x() if hit.text else x0 + 22)
+            if hit.children or pos.x() > text_x + NEST_SHIFT:
+                return hit, 0, x0 + CHILD_INDENT, top + h
         return hit.parent_block, idx + 1, x0, top + h
 
     # --- events ----------------------------------------------------------------------------

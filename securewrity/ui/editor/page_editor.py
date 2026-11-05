@@ -348,14 +348,30 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
                 first = self.insert_block({"type": "paragraph"}, None, 0)
             self.focus_block(first, "start")
 
+    def margin_mouse(self, ev) -> bool:
+        """Press in the empty space beside the blocks and drag up/down to select whole blocks."""
+        left = Qt.MouseButton.LeftButton
+        if ev.type() == ev.Type.MouseButtonPress and ev.button() == left:
+            self._band_anchor = self.block_at(ev.globalPosition().toPoint())
+            self.clear_selection()
+            return False
+        if ev.type() == ev.Type.MouseMove and ev.buttons() & left and getattr(self, "_band_anchor", None):
+            self.select_range(self._band_anchor, self.block_at(ev.globalPosition().toPoint()))
+            return True
+        if ev.type() == ev.Type.MouseButtonRelease:
+            self._band_anchor = None
+        return False
+
     def paint_history_icons(self):
         self.undo_btn.setIcon(arrow_icon(theme.t("text"), redo=False))
         self.redo_btn.setIcon(arrow_icon(theme.t("text"), redo=True))
 
     def eventFilter(self, obj, ev):
-        if obj is getattr(self, "_canvas", None) and ev.type() in (
-                ev.Type.DragEnter, ev.Type.DragMove, ev.Type.DragLeave, ev.Type.Drop):
-            return self.drag_event(ev)
+        if obj is getattr(self, "_canvas", None):
+            if ev.type() in (ev.Type.DragEnter, ev.Type.DragMove, ev.Type.DragLeave, ev.Type.Drop):
+                return self.drag_event(ev)
+            if ev.type() in (ev.Type.MouseButtonPress, ev.Type.MouseMove, ev.Type.MouseButtonRelease):
+                return self.margin_mouse(ev)
         if obj is self.title and ev.type() == ev.Type.KeyPress and ev.key() == K.Key_Down and self.blocks:
             self.focus_block(self.blocks[0], "start")
             return True
