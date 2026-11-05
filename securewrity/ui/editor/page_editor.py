@@ -27,6 +27,7 @@ SHIFT = Qt.KeyboardModifier.ShiftModifier
 ALT = Qt.KeyboardModifier.AltModifier
 LIST_TYPES = {"bullet", "numbered", "todo", "toggle", "quote", "callout"}
 NUM_RE = re.compile(r"^\d+\.$")
+COLUMN_WIDTH = 900  # normal page width; "Full width" pages use the whole window
 HANDLE_PAD = 22  # aligns header with block text (handle width + spacing)
 
 
@@ -129,8 +130,9 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         h = QHBoxLayout(canvas)
         h.setContentsMargins(40, 20, 40, 0)
         h.addStretch(1)
+        self.canvas_layout = h
         self.column = QWidget()
-        self.column.setMaximumWidth(900)
+        self.column.setMaximumWidth(COLUMN_WIDTH)
         self.column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         h.addWidget(self.column, 6)
         h.addStretch(1)
@@ -211,6 +213,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             return
         self.title.setText(page["title"])
         self._render_icon(page["icon"])
+        self.apply_width(bool(page["props"].get("full_width")))
         for data in self.repo.get_blocks(page_id):
             self._insert_widget(BlockWidget(self, data), None, len(self.blocks))
         if not self.blocks:
@@ -390,9 +393,37 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         m.addAction("↶  Undo\tCtrl+Z", self.undo).setEnabled(self.can_undo())
         m.addAction("↷  Redo\tCtrl+Shift+Z", self.redo).setEnabled(self.can_redo())
         m.addAction("▣  Select all blocks\tCtrl+A twice", self.select_all_blocks)
+        fw = m.addAction("↔  Full width", self.toggle_full_width)
+        fw.setCheckable(True)
+        fw.setChecked(self.is_full_width())
         m.addSeparator()
         self.ctx.window.populate_page_menu(m, self.page_id)
         m.exec(self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height())))
+
+    def is_full_width(self) -> bool:
+        p = self.repo.get_page(self.page_id) if self.page_id else None
+        return bool(p and p["props"].get("full_width"))
+
+    def toggle_full_width(self):
+        """Like Notion's Full width: this page's text uses the whole window instead of a centered column."""
+        if not self.page_id:
+            return
+        props = dict(self.repo.get_page(self.page_id)["props"])
+        full = not props.get("full_width")
+        if full:
+            props["full_width"] = True
+        else:
+            props.pop("full_width", None)
+        self.repo.update_page(self.page_id, props=props)
+        self.apply_width(full)
+
+    def apply_width(self, full: bool):
+        self.column.setMaximumWidth(16777215 if full else COLUMN_WIDTH)
+        side = 0 if full else 1  # the empty stretch on each side of the column
+        self.canvas_layout.setStretch(0, side)
+        self.canvas_layout.setStretch(2, side)
+        m = self.canvas_layout.contentsMargins()
+        self.canvas_layout.setContentsMargins(60 if full else 40, m.top(), 60 if full else 40, m.bottom())
 
     def set_status(self, key: str, text: str):
         if text:

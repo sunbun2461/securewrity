@@ -246,6 +246,11 @@ to add one inside the open page, or type <code>/page</code> inside a page.</li>
 <p>To add a whole block that links to a page, type <code>/link</code> and pick <b>Link to page</b>.</p>
 <p>At the bottom of every page, <b>Linked from</b> lists the pages that link to it.</p>
 """, 2)
+    sec("fullwidth", "Full width pages", f"""
+<p>Normally the text sits in a centered column, easy to read on a wide screen. For tables, long lists or side-by-side
+work, click <b>⋯</b> at the top right of the page → <b>Full width</b> and the page uses the whole window.
+Each page remembers its own setting; click it again to go back.</p>
+""", 2)
     sec("search", "Finding a page", f"""
 <p>Press {kbd('Ctrl', 'P')} or click <b>Search</b> in the sidebar. Type part of a title or of the text on a page.</p>
 """, 2)

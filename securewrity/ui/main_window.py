@@ -274,6 +274,7 @@ class MainWindow(QMainWindow):
             ("Plugins", lambda: PluginsDialog(self.ctx.controller, self).exec()),
             ("Lock", self.lock),
             ("Help", self.show_help),
+            ("Full width page on / off", lambda: self.editor.toggle_full_width()),
             ("Import Markdown files or Notion .zip", lambda: self.import_markdown()),
             ("Import a folder of Markdown pages", lambda: self.import_markdown(folder=True)),
         ]
