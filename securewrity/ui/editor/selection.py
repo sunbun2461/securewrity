@@ -49,8 +49,13 @@ class SelectionMixin:
     def select_blocks(self, blocks):
         self.clear_selection(refocus=False)
         self._selected = {id(b) for b in blocks}
-        for b in blocks:
+
+        def tint(b):  # nested blocks come along, so they look selected too
             b.set_selected(True)
+            for c in b.children:
+                tint(c)
+        for b in blocks:
+            tint(b)
             if b.text and b.text.textCursor().hasSelection():
                 c = b.text.textCursor()
                 c.clearSelection()
@@ -109,6 +114,7 @@ class SelectionMixin:
         for b in self.all_blocks():
             if id(b) in sel:
                 first = first or b
+            if b.selected:
                 b.set_selected(False)
         self._selected = set()
         self.set_status("selection", "")
@@ -118,9 +124,14 @@ class SelectionMixin:
     def focusOutEvent(self, e):
         """Clicking anywhere else (title, sidebar, another app) ends the selection; menus don't."""
         super().focusOutEvent(e)
-        if e.reason() not in (Qt.FocusReason.PopupFocusReason, Qt.FocusReason.ActiveWindowFocusReason) \
-                and not getattr(self, "_dragging", None):
-            self.clear_selection()
+        if e.reason() in (Qt.FocusReason.PopupFocusReason, Qt.FocusReason.ActiveWindowFocusReason) \
+                or getattr(self, "_dragging", None):
+            return
+        fw = QApplication.focusWidget()
+        bw = getattr(fw, "bw", None)
+        if e.reason() == Qt.FocusReason.MouseFocusReason and bw is not None and self.is_in_selection(bw):
+            return  # pressed on a highlighted block: maybe dragging them; the release decides
+        self.clear_selection()
 
     def copy_selected(self):
         tops = self.selected_blocks()

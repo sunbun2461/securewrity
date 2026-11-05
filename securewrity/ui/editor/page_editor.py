@@ -181,6 +181,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # holds the keyboard while blocks are selected
         self._selected = set()
         self.setup_drag_drop(canvas)
+        canvas.installEventFilter(self)  # margin selection
 
         # timers & popups ---------------------------------------------------
         self.save_timer = QTimer(self, singleShot=True, interval=600, timeout=self.save_now)
@@ -371,8 +372,6 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
 
     def eventFilter(self, obj, ev):
         if obj is getattr(self, "_canvas", None):
-            if ev.type() in (ev.Type.DragEnter, ev.Type.DragMove, ev.Type.DragLeave, ev.Type.Drop):
-                return self.drag_event(ev)
             if ev.type() in (ev.Type.MouseButtonPress, ev.Type.MouseMove, ev.Type.MouseButtonRelease):
                 return self.margin_mouse(ev)
         if obj is self.title and ev.type() == ev.Type.KeyPress and ev.key() == K.Key_Down and self.blocks:
@@ -973,6 +972,10 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         return False
 
     def keyPressEvent(self, e):
+        if self.is_dragging():
+            if e.key() == K.Key_Escape:
+                self.cancel_drag()
+            return
         if self.history_key(e) or (self.has_selection() and self.selection_key(e)):
             return
         super().keyPressEvent(e)

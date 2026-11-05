@@ -274,6 +274,8 @@ Duplicate, Move up / down, Indent / Outdent, Select and Delete. Right-clicking t
 <p>Press on a block's ⋮⋮ handle and drag. A blue line shows where it will land; let go to drop it there.
 <b>To move several blocks</b>, highlight them first (see <i>Selecting blocks</i> below), then press on any of the
 highlighted blocks and drag. A badge shows how many are coming along.</p>
+<p>A block always moves with everything inside it: drag a toggle and its contents come too, drag a bullet and its
+sub-bullets come too. Press {kbd('Esc')} while dragging to cancel.</p>
 {img("drag.png", "Dragging onto a toggle: the line is indented, so the block goes inside it")}
 {table([
     ["Over the top part of a block", "Drops above it"],

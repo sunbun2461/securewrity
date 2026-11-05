@@ -1,24 +1,29 @@
-"""Drag blocks by their ⋮⋮ handle (or a selection by any selected block): reorder them, or drop them inside another block.
+"""Drag blocks by their ⋮⋮ handle (or a selection by any selected block): reorder them, or drop
+them inside another block. A block always moves together with everything nested inside it.
 
-Where a block lands is shown by a blue line while dragging:
+The drag is done by the editor itself (follow the mouse, draw a preview, drop on release) rather
+than the system's drag-and-drop, so it behaves the same on X11, Wayland and in tests.
+
+Where blocks land is shown by a blue line while dragging:
   * top part of a block          → above it
   * a toggle (most of its row)   → inside it, as the first item (line is indented)
   * bottom part of other blocks  → below it; move the pointer right (past the start of the
                                    text) and it goes inside that block instead (line is indented)
   * below the last block         → end of the page
-Dragging a block that is part of a selection moves the whole selection.
+Esc while dragging cancels. Dragging a block that is part of a selection moves the whole selection.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import QEvent, QMimeData, QPoint, Qt
-from PyQt6.QtGui import QColor, QDrag, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QFrame, QToolButton
+from PyQt6.QtCore import QPoint, Qt, QTimer
+from PyQt6.QtGui import QColor, QCursor, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QToolButton
 
 from .. import theme
 
-DRAG_MIME = "application/x-securewrity-drag"
+DRAG_MIME = "application/x-securewrity-drag"  # kept for plugins that check for it
 CHILD_INDENT = 26
 NEST_SHIFT = 50  # px right of a block's text start that means "put it inside this block"
+GHOST_MAX_H = 220
 
 
 class DragHandle(QToolButton):
@@ -35,20 +40,27 @@ class DragHandle(QToolButton):
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
+        ed = self.bw.editor
+        if ed.is_dragging():
+            ed.drag_move(e.globalPosition().toPoint())
+            return
         if (self._press is not None and e.buttons() & Qt.MouseButton.LeftButton
                 and (e.position().toPoint() - self._press).manhattanLength() >= QApplication.startDragDistance()):
             self._press = None
             self.setDown(False)
-            self.bw.editor.start_drag(self.bw)
+            ed.start_drag(self.bw, e.globalPosition().toPoint())
             return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
+        ed = self.bw.editor
+        if ed.is_dragging():
+            ed.finish_drag(e.globalPosition().toPoint())
+            return
         was_click = self._press is not None
         self._press = None
         self.setDown(False)
         if was_click and e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
-            ed = self.bw.editor
             if e.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier):
                 ed.toggle_selected(self.bw)
             else:
@@ -60,45 +72,123 @@ class DragDropMixin:
 
     def setup_drag_drop(self, canvas):
         self._canvas = canvas
-        canvas.setAcceptDrops(True)
-        canvas.installEventFilter(self)
         self._drop_line = QFrame(canvas)
         self._drop_line.setFixedHeight(3)
         self._drop_line.hide()
+        self._ghost = QLabel(canvas)
+        self._ghost.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._ghost.hide()
         self._dragging: list = []
-        self._drop_at = None
+        self._drag_source = None
+        self._last_global = QPoint()
+        self._scroll_timer = QTimer(self, interval=40, timeout=self._drag_tick)
 
-    def start_drag(self, bw):
+    def is_dragging(self) -> bool:
+        return bool(self._dragging)
+
+    # --- start / move / finish ----------------------------------------------------------
+    def start_drag(self, bw, global_pos: QPoint):
         tops = self.selected_blocks() if self.is_in_selection(bw) else [bw]
         self.save_now()
+        self.toolbar.hide()
+        self.slash.close_menu()
         self._dragging = tops
-        mime = QMimeData()
-        mime.setData(DRAG_MIME, b"1")
-        drag = QDrag(self)
-        drag.setMimeData(mime)
-        pix = bw.row.grab()
-        faded = QPixmap(pix.size())
-        faded.fill(Qt.GlobalColor.transparent)
-        p = QPainter(faded)
-        p.setOpacity(0.6)
-        p.drawPixmap(0, 0, pix)
-        if len(tops) > 1:  # badge: how many blocks are coming along
-            p.setOpacity(1.0)
-            label = f"{len(tops)} blocks"
+        self._drag_source = bw
+        self._ghost.setPixmap(self._ghost_pixmap(tops))
+        self._ghost.adjustSize()
+        self._ghost.show()
+        self._ghost.raise_()
+        QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
+        self.grabKeyboard()  # Esc cancels
+        self._scroll_timer.start()
+        self.drag_move(global_pos)
+
+    def drag_move(self, global_pos: QPoint):
+        if not self._dragging:
+            return
+        self._last_global = global_pos
+        pos = self._canvas.mapFromGlobal(global_pos)
+        self._ghost.move(pos + QPoint(12, 8))
+        target = self.drop_target(pos)
+        if target is None:
+            self._drop_line.hide()
+            return
+        _, _, lx, ly = target
+        right = self.column.mapTo(self._canvas, QPoint(self.column.width(), 0)).x()
+        self._drop_line.setStyleSheet(f"background:{theme.t('accent')}; border-radius:1px;")
+        self._drop_line.setGeometry(lx + 20, ly - 1, max(40, right - lx - 20), 3)
+        self._drop_line.show()
+        self._drop_line.raise_()
+
+    def finish_drag(self, global_pos: QPoint | None = None, cancel: bool = False):
+        if not self._dragging:
+            return
+        blocks = self._dragging
+        target = None if cancel else self.drop_target(self._canvas.mapFromGlobal(global_pos or self._last_global))
+        self._end_drag()
+        if target is not None:
+            self.move_blocks(blocks, target[0], target[1])
+
+    def cancel_drag(self):
+        self.finish_drag(cancel=True)
+
+    def _end_drag(self):
+        self._dragging = []
+        self._scroll_timer.stop()
+        self._ghost.hide()
+        self._drop_line.hide()
+        self.releaseKeyboard()
+        if QApplication.overrideCursor() is not None:
+            QApplication.restoreOverrideCursor()
+        src, self._drag_source = self._drag_source, None
+        if src is not None and src.parent() is not None:
+            src.handle.hide()
+
+    def _drag_tick(self):
+        """Scroll when the pointer rests near the top or bottom edge, and follow the page."""
+        if not self._dragging:
+            return
+        vp = self.scroll.viewport()
+        y = vp.mapFromGlobal(QCursor.pos()).y()
+        bar = self.scroll.verticalScrollBar()
+        step = -18 if y < 40 else 18 if y > vp.height() - 40 else 0
+        if step and bar.minimum() <= bar.value() + step <= bar.maximum():
+            bar.setValue(bar.value() + step)
+            self.drag_move(QCursor.pos())
+
+    def _ghost_pixmap(self, tops) -> QPixmap:
+        """A faded picture of the first block, sub-blocks included, plus an 'N blocks' badge."""
+        src = tops[0].grab()
+        h = min(src.height(), GHOST_MAX_H)
+        w = min(src.width(), 560)
+        out = QPixmap(w, h)
+        out.fill(Qt.GlobalColor.transparent)
+        p = QPainter(out)
+        bg = QColor(theme.t("bg"))
+        bg.setAlpha(225)
+        p.fillRect(0, 0, w, h, bg)  # the grab has no page background of its own
+        p.setOpacity(0.85)
+        p.drawPixmap(0, 0, src, 0, 0, w, h)
+        p.setOpacity(1.0)
+        pen = QColor(theme.t("accent"))
+        p.setPen(pen)
+        p.drawRoundedRect(0, 0, w - 1, h - 1, 4, 4)
+        n = len(tops)
+        def count(b):
+            return sum(1 + count(c) for c in b.children)
+        nested = sum(count(b) for b in tops)
+        label = f"{n} blocks" if n > 1 else (f"+ {nested} inside" if nested else "")
+        if label:
             fm = p.fontMetrics()
             r = fm.boundingRect(label).adjusted(-7, -3, 7, 3)
-            r.moveTopRight(QPoint(pix.width() - 4, 2))
+            r.moveTopRight(QPoint(w - 4, 3))
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(theme.t("accent")))
+            p.setBrush(pen)
             p.drawRoundedRect(r, 8, 8)
             p.setPen(QColor("white"))
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, label)
         p.end()
-        drag.setPixmap(faded)
-        drag.setHotSpot(QPoint(10, min(12, pix.height() // 2)))
-        drag.exec(Qt.DropAction.MoveAction)
-        self._dragging = []
-        self._drop_line.hide()
+        return out
 
     # --- target finding ----------------------------------------------------------------
     def _row_rect(self, b):
@@ -141,54 +231,9 @@ class DragDropMixin:
                 return hit, 0, x0 + CHILD_INDENT, top + h
         return hit.parent_block, idx + 1, x0, top + h
 
-    # --- events ----------------------------------------------------------------------------
-    def drag_event(self, ev) -> bool:
-        t = ev.type()
-        if t == QEvent.Type.DragLeave:
-            self._drop_line.hide()
-            return True
-        if not ev.mimeData().hasFormat(DRAG_MIME) or not self._dragging:
-            return False
-        if t == QEvent.Type.DragEnter:
-            ev.acceptProposedAction()
-            return True
-        pos = ev.position().toPoint()
-        if t == QEvent.Type.DragMove:
-            self._autoscroll(pos)
-            target = self.drop_target(pos)
-            self._drop_at = target
-            if target is None:
-                self._drop_line.hide()
-                ev.ignore()
-                return True
-            _, _, lx, ly = target
-            right = self.column.mapTo(self._canvas, QPoint(self.column.width(), 0)).x()
-            self._drop_line.setStyleSheet(f"background:{theme.t('accent')}; border-radius:1px;")
-            self._drop_line.setGeometry(lx + 20, ly - 1, max(40, right - lx - 20), 3)
-            self._drop_line.show()
-            self._drop_line.raise_()
-            ev.acceptProposedAction()
-            return True
-        if t == QEvent.Type.Drop:
-            self._drop_line.hide()
-            target = self.drop_target(pos)
-            if target is not None:
-                ev.acceptProposedAction()
-                self.move_blocks(self._dragging, target[0], target[1])
-            return True
-        return False
-
-    def _autoscroll(self, pos: QPoint):
-        vp = self.scroll.viewport()
-        y = self._canvas.mapTo(vp, pos).y()
-        bar = self.scroll.verticalScrollBar()
-        if y < 40:
-            bar.setValue(bar.value() - 24)
-        elif y > vp.height() - 40:
-            bar.setValue(bar.value() + 24)
-
     def move_blocks(self, blocks, parent, index):
-        """Move blocks (in page order) to `parent` (None = page) starting at `index`."""
+        """Move blocks (in page order, each with everything nested in it) to `parent`
+        (None = page) starting at `index`."""
         if parent is not None and (any(parent is b or any(a is b for a in parent.ancestors()) for b in blocks)
                                    or not parent.btype.can_have_children):
             return

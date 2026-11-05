@@ -10,7 +10,7 @@ from ...blocks.registry import registry
 from ...core.repo import new_id
 from .. import theme
 from . import richtext
-from .dragdrop import DRAG_MIME, DragHandle
+from .dragdrop import DragHandle
 
 HANDLE_W = 20
 CHILD_INDENT = 26
@@ -68,16 +68,6 @@ class BlockTextEdit(QTextEdit):
         html = source.html() if source.hasHtml() else ""
         self.bw.editor.handle_paste(self.bw, source.text(), html, plain=getattr(self, "_paste_plain", False))
 
-    # a block being dragged by its handle is not text: let the page handle it
-    def dragEnterEvent(self, e):
-        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dragEnterEvent(e)
-
-    def dragMoveEvent(self, e):
-        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dragMoveEvent(e)
-
-    def dropEvent(self, e):
-        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dropEvent(e)
-
     # mouse: a press on a selected block may start dragging the selection; dragging out of
     # this block while highlighting text switches to selecting whole blocks
     _sel_press = None
@@ -97,10 +87,13 @@ class BlockTextEdit(QTextEdit):
 
     def mouseMoveEvent(self, e):
         ed = self.bw.editor
+        if ed.is_dragging():
+            ed.drag_move(e.globalPosition().toPoint())
+            return
         if self._sel_press is not None:
             if (e.position().toPoint() - self._sel_press).manhattanLength() >= QApplication.startDragDistance():
                 self._sel_press = None
-                ed.start_drag(self.bw)
+                ed.start_drag(self.bw, e.globalPosition().toPoint())
             return
         # only while the button pressed here is still down: QTextEdit's autoscroll timer sends
         # made-up "left button held" moves, which must never keep a block highlight going
@@ -120,6 +113,10 @@ class BlockTextEdit(QTextEdit):
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self._left_down = False
+        if self.bw.editor.is_dragging():
+            self._sel_press = None
+            self.bw.editor.finish_drag(e.globalPosition().toPoint())
+            return
         if self._sel_press is not None:  # a plain click on a selected block: back to typing there
             pos, self._sel_press = self._sel_press, None
             self.bw.editor.clear_selection()
@@ -141,7 +138,10 @@ class BlockTextEdit(QTextEdit):
 
     def focusInEvent(self, e):
         super().focusInEvent(e)
-        self.bw.on_focus(True)
+        # a mouse press on a highlighted block may be the start of dragging the highlight:
+        # keep it; the release decides (plain click → stop highlighting, drag → move them)
+        keep = e.reason() == Qt.FocusReason.MouseFocusReason and self.bw.editor.is_in_selection(self.bw)
+        self.bw.on_focus(True, keep_selection=keep)
 
     def focusOutEvent(self, e):
         super().focusOutEvent(e)
@@ -274,8 +274,8 @@ class BlockWidget(QWidget):
         if obj is self.row:
             if ev.type() == QEvent.Type.Enter:
                 self.handle.show()
-            elif ev.type() == QEvent.Type.Leave:
-                self.handle.hide()
+            elif ev.type() == QEvent.Type.Leave and not self.editor.is_dragging():
+                self.handle.hide()  # (never mid-drag: hiding it would drop the mouse grab)
         return False
 
     # --- appearance -------------------------------------------------------------
@@ -321,10 +321,11 @@ class BlockWidget(QWidget):
             self.selected = on
             self.apply_style()
 
-    def on_focus(self, focused: bool):
+    def on_focus(self, focused: bool, keep_selection: bool = False):
         if focused and self.parent() is not None:  # ignore late focus events of removed blocks
             self.editor.current = self
-            self.editor.clear_selection()
+            if not keep_selection:
+                self.editor.clear_selection()
         if self.text:
             ph = self.btype.placeholder if (focused or self.type_key != "paragraph") else ""
             self.text.setPlaceholderText(ph)
