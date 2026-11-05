@@ -134,13 +134,20 @@ class Sidebar(QWidget):
         self.tree.itemCollapsed.connect(self._save_expanded)
         v.addWidget(self.tree, 1)
 
-        for text, fn in (("🗑  Trash", window.show_trash), ("⚙  Settings", window.show_settings),
+        for text, fn in (("📥  Import", self._import_menu),
+                         ("🗑  Trash", window.show_trash), ("⚙  Settings", window.show_settings),
                          ("❓  Help", lambda: window.show_help())):
             b = QPushButton(text)
             b.setObjectName("SideButton")
             b.clicked.connect(fn)
             v.addWidget(b)
         self._restoring = False
+
+    def _import_menu(self):
+        m = QMenu(self)
+        m.addAction("📄  Markdown files or Notion .zip…", lambda: self.window.import_markdown())
+        m.addAction("📁  A folder of pages…", lambda: self.window.import_markdown(folder=True))
+        m.exec(self.cursor().pos())
 
     def _user_menu(self):
         m = QMenu(self)

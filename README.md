@@ -8,7 +8,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Pages inside pages**, any depth, with a draggable **sidebar** tree, favorites and trash
 - **Links**: sub-page blocks, “link to page” blocks, inline `[[` links, and a “Linked from” backlinks list
 - Headings, bullets, numbered lists, to-dos, quotes, callouts, code, dividers
-- **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); account menu → Import Markdown file… for `.md` files
+- **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); sidebar → 📥 Import brings in `.md` files, folders and Notion export `.zip`s with their sub-pages and links
 - `/` slash menu, Markdown shortcuts (`# `, `- `, `[] `, `#> ` …), search (Ctrl+P), dark and light themes
 - **Accounts**: a Guest account (no password) plus any number of user accounts
 - **Encryption**, optional and available at any time: password, passphrase (can be generated) or a

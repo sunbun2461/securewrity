@@ -1,0 +1,171 @@
+"""Import Markdown files, folders and Notion export .zip files as pages with sub-pages.
+
+Layout rules (they match a Notion "Markdown & CSV" export, and plain folders of notes):
+
+* every ``.md`` / ``.markdown`` file becomes a page;
+* a folder next to a file with the same name holds that page's sub-pages
+  (``Trip.md`` + ``Trip/Day 1.md`` → "Day 1" is a sub-page of "Trip");
+* a folder with no matching file becomes a page named after the folder;
+* links between the imported files (``[Day 1](Trip/Day%201.md)``) become page links,
+  and a line that is only a link to one of the page's own sub-pages becomes a sub-page block.
+
+Pure Python, no Qt.
+"""
+from __future__ import annotations
+
+import re
+import tempfile
+import zipfile
+from pathlib import Path
+from urllib.parse import unquote
+
+from .markdown_import import parse_markdown
+
+MD_SUFFIXES = {".md", ".markdown"}
+_NOTION_ID = re.compile(r"\s+[0-9a-f]{32}$", re.I)
+
+
+def clean_title(name: str) -> str:
+    """'Trip ideas 1a2b…(32 hex)' → 'Trip ideas'."""
+    return _NOTION_ID.sub("", name).strip() or "Untitled"
+
+
+def blocks_and_title(text: str, fallback: str) -> tuple[list[dict], str]:
+    """Parse a file; a leading '# Title' becomes the page title instead of a block."""
+    blocks = parse_markdown(text)
+    title = clean_title(fallback)
+    if blocks and blocks[0]["type"] in ("h1", "toggle_h1") and not blocks[0]["children"]:
+        title = "".join(r["t"] for r in blocks.pop(0)["content"]).strip() or title
+    return blocks, title
+
+
+class _Importer:
+    def __init__(self, repo):
+        self.repo = repo
+        self.by_path: dict[Path, str] = {}           # resolved .md path → page id
+        self.pending: list[tuple[str, Path, list[dict]]] = []  # (page id, file, blocks)
+        self.count = 0
+
+    def _new_page(self, parent_id, title):
+        self.count += 1
+        return self.repo.create_page(parent_id, title, commit=False)
+
+    def file(self, path: Path, parent_id):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        blocks, title = blocks_and_title(text, path.stem)
+        pid = self._new_page(parent_id, title)
+        self.by_path[path.resolve()] = pid
+        self.pending.append((pid, path, blocks))
+        return pid
+
+    def folder_contents(self, folder: Path, parent_id):
+        entries = sorted((p for p in folder.iterdir() if not p.name.startswith((".", "__MACOSX"))),
+                         key=lambda p: p.name.lower())
+        files = [p for p in entries if p.is_file() and p.suffix.lower() in MD_SUFFIXES]
+        dirs = {p.name: p for p in entries if p.is_dir()}
+        for f in files:
+            pid = self.file(f, parent_id)
+            sub = dirs.pop(f.stem, None)
+            if pid and sub:
+                self.folder_contents(sub, pid)
+        for d in dirs.values():
+            if _has_markdown(d):
+                self.folder_contents(d, self._new_page(parent_id, clean_title(d.name)))
+
+    def finish(self):
+        """Second pass: now every page exists, point links at pages and save the blocks."""
+        for pid, path, blocks in self.pending:
+            self._fix_links(blocks, path.parent, pid)
+            self.repo.save_blocks(pid, blocks, commit=False)
+
+    def _target(self, link: str, base: Path):
+        if not link or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
+            return None  # http:, page:, mailto: … left alone
+        p = unquote(link.split("#", 1)[0])
+        if Path(p).suffix.lower() not in MD_SUFFIXES:
+            return None
+        try:
+            return self.by_path.get((base / p).resolve())
+        except OSError:
+            return None
+
+    def _fix_links(self, blocks, base, page_id):
+        for i, b in enumerate(blocks):
+            runs = [r for r in b["content"] if r["t"].strip()]
+            if b["type"] in ("paragraph", "bullet") and not b["children"] and len(runs) == 1:
+                target = self._target(runs[0].get("link", ""), base)
+                if target and self.repo.get_page(target)["parent_id"] == page_id:
+                    blocks[i] = {"type": "page", "content": [], "props": {"page_id": target}, "children": []}
+                    continue
+            for r in b["content"]:
+                target = self._target(r.get("link", ""), base)
+                if target:
+                    r["link"] = f"page:{target}"
+            self._fix_links(b["children"], base, page_id)
+
+
+def _has_markdown(folder: Path) -> bool:
+    return any(p.suffix.lower() in MD_SUFFIXES for p in folder.rglob("*") if p.is_file())
+
+
+def _extract_zip(path: Path, into: Path):
+    """Extract, including the zips-inside-a-zip Notion makes for big exports."""
+    with zipfile.ZipFile(path) as z:
+        z.extractall(into)  # extractall drops '..' and absolute parts, so nothing escapes `into`
+    for inner in sorted(into.rglob("*.zip")):
+        dest = inner.with_suffix("")
+        dest.mkdir(exist_ok=True)
+        with zipfile.ZipFile(inner) as z:
+            z.extractall(dest)
+        inner.unlink()
+
+
+def import_paths(repo, paths, parent_id: str | None = None) -> tuple[list[str], int]:
+    """Import .md files, folders and .zip exports under `parent_id` (None = top level).
+
+    Returns (ids of the new top pages, total pages created). One save at the end.
+    """
+    imp = _Importer(repo)
+    tops: list[str] = []
+    with tempfile.TemporaryDirectory(prefix="securewrity-import-") as tmp:
+        for i, raw in enumerate(paths):
+            path = Path(raw)
+            if path.suffix.lower() == ".zip":
+                folder = Path(tmp) / str(i)
+                folder.mkdir()
+                _extract_zip(path, folder)
+                tops += _import_folder(imp, folder, path.stem, parent_id)
+            elif path.is_dir():
+                tops += _import_folder(imp, path, path.name, parent_id)
+            elif path.is_file():
+                pid = imp.file(path, parent_id)
+                if pid:
+                    tops.append(pid)
+                    sub = path.with_suffix("")
+                    if sub.is_dir():  # "Trip.md" picked with a "Trip/" folder beside it
+                        imp.folder_contents(sub, pid)
+        imp.finish()  # files in the temp folder are read before it is removed
+    repo.commit()
+    return tops, imp.count
+
+
+def _import_folder(imp: _Importer, folder: Path, name: str, parent_id) -> list[str]:
+    """A folder holding one top page (a typical Notion export) imports as that page;
+    a folder of several notes is wrapped in a page named after the folder."""
+    items = [p for p in folder.iterdir() if not p.name.startswith((".", "__MACOSX"))]
+    md = [p for p in items if p.is_file() and p.suffix.lower() in MD_SUFFIXES]
+    dirs = [p for p in items if p.is_dir() and _has_markdown(p)]
+    if len(md) == 1 and all(d.name == md[0].stem for d in dirs):
+        before = len(imp.pending)
+        imp.folder_contents(folder, parent_id)
+        return [imp.pending[before][0]] if len(imp.pending) > before else []
+    if not md and len(dirs) == 1:
+        return _import_folder(imp, dirs[0], dirs[0].name, parent_id)
+    if not md and not dirs:
+        return []
+    top = imp._new_page(parent_id, clean_title(name))
+    imp.folder_contents(folder, top)
+    return [top]

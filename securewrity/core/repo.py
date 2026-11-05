@@ -126,7 +126,8 @@ class Repo:
                 out.insert(0, p)
         return out
 
-    def create_page(self, parent_id: str | None = None, title: str = "", icon: str = "") -> str:
+    def create_page(self, parent_id: str | None = None, title: str = "", icon: str = "",
+                    commit: bool = True) -> str:
         pid = new_id()
         now = time.time()
         pos = self.db.execute(
@@ -134,7 +135,8 @@ class Repo:
         self.db.execute(
             "INSERT INTO pages(id, parent_id, title, icon, position, created, updated) VALUES (?,?,?,?,?,?,?)",
             (pid, parent_id, title, icon, pos, now, now))
-        self.commit()
+        if commit:
+            self.commit()
         return pid
 
     def update_page(self, page_id: str, **fields) -> None:

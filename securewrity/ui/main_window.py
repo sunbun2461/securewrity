@@ -1,6 +1,8 @@
 """Main application window: sidebar + page editor, menus, shortcuts, auto-lock."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (QApplication, QDialog, QLabel, QLineEdit, QListWidget,
@@ -187,6 +189,7 @@ class MainWindow(QMainWindow):
             return
         m.addAction("Open", lambda: self.open_page(page_id))
         m.addAction("＋  Add sub-page", lambda: self.create_page(parent_id=page_id))
+        m.addAction("📥  Import Markdown here…", lambda: self.import_markdown(parent_id=page_id))
         m.addAction("☆  Remove from favorites" if p["favorite"] else "★  Add to favorites",
                     lambda: (repo.update_page(page_id, favorite=0 if p["favorite"] else 1),
                              self.ctx.events.emit("pages_changed")))
@@ -208,7 +211,8 @@ class MainWindow(QMainWindow):
         m.addAction("🎨  Toggle dark / light\tCtrl+Shift+L", self.toggle_theme)
         m.addAction("🧩  Plugins…", lambda: PluginsDialog(self.ctx.controller, self).exec())
         m.addAction("⌘  Command palette\tCtrl+Shift+P", self.command_palette)
-        m.addAction("📥  Import Markdown file…", self.import_markdown)
+        m.addAction("📥  Import Markdown files or Notion .zip…", lambda: self.import_markdown())
+        m.addAction("📁  Import a folder of pages…", lambda: self.import_markdown(folder=True))
         m.addAction("❓  Help\tF1", self.show_help)
         app_cmds = [c for c in self.ctx.api.commands if c.scope == "app"]
         if app_cmds:
@@ -270,7 +274,8 @@ class MainWindow(QMainWindow):
             ("Plugins", lambda: PluginsDialog(self.ctx.controller, self).exec()),
             ("Lock", self.lock),
             ("Help", self.show_help),
-            ("Import Markdown file", self.import_markdown),
+            ("Import Markdown files or Notion .zip", lambda: self.import_markdown()),
+            ("Import a folder of Markdown pages", lambda: self.import_markdown(folder=True)),
         ]
         for c in self.ctx.api.commands:
             builtin.append((c.label, lambda c=c: self._run(c)))
@@ -323,38 +328,39 @@ class MainWindow(QMainWindow):
         TrashDialog(self.ctx, self).exec()
         self._refresh_pages()
 
-    def import_markdown(self, path: str | None = None):
-        """Make a new page from a .md file (an AI answer saved to a file, a Notion export…)."""
-        from pathlib import Path
+    def import_markdown(self, paths=None, parent_id: str | None = None, folder: bool = False):
+        """Import .md files, a folder of them, or a Notion export .zip as pages and sub-pages."""
+        from PyQt6.QtWidgets import QApplication, QFileDialog
 
-        from PyQt6.QtWidgets import QFileDialog
-
-        from ..core.markdown_import import parse_markdown
-        if not path:
-            path, _ = QFileDialog.getOpenFileName(self, "Import Markdown", str(Path.home()),
-                                                  "Markdown (*.md *.markdown *.txt);;All files (*)")
-        if not path:
+        from ..core.md_tree import import_paths
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        if not paths:
+            if folder:
+                d = QFileDialog.getExistingDirectory(self, "Import a folder of Markdown pages", str(Path.home()))
+                paths = [d] if d else []
+            else:
+                paths, _ = QFileDialog.getOpenFileNames(
+                    self, "Import Markdown", str(Path.home()),
+                    "Markdown or Notion export (*.md *.markdown *.txt *.zip);;All files (*)")
+        if not paths:
             return None
+        self.editor.save_now()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            text = Path(path).read_text(encoding="utf-8", errors="replace")
-        except OSError as e:
-            self.notify(f"Couldn't read the file: {e}")
+            tops, count = import_paths(self.ctx.repo, paths, parent_id)
+        except (OSError, ValueError) as e:  # zipfile.BadZipFile is a ValueError
+            self.notify(f"Couldn't import: {e}")
             return None
-        blocks = parse_markdown(text)
-        title = Path(path).stem
-        if blocks and blocks[0]["type"] in ("h1", "toggle_h1") and not blocks[0]["children"]:
-            title = "".join(r["t"] for r in blocks.pop(0)["content"]) or title
-        # Notion export file names end in a 32-character id
-        import re
-        title = re.sub(r"\s+[0-9a-f]{32}$", "", title)
-        repo = self.ctx.repo
-        pid = repo.create_page(None, title)
-        repo.save_blocks(pid, blocks)
-        repo.commit()
+        finally:
+            QApplication.restoreOverrideCursor()
+        if not tops:
+            self.notify("No Markdown pages found there")
+            return None
         self.ctx.events.emit("pages_changed")
-        self.open_page(pid)
-        self.notify(f"Imported “{title}”")
-        return pid
+        self.open_page(tops[0])
+        self.notify(f"Imported {count} page{'s' if count != 1 else ''}")
+        return tops[0]
 
     def show_help(self, section: str | None = None):
         from .help import HelpWindow

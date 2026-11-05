@@ -255,3 +255,74 @@ class MarkdownImportTests(unittest.TestCase):
         self.assertEqual([b["type"] for b in t], ["toggle_h2", "toggle"])
         self.assertEqual([c["content"][0]["t"] for c in t[0]["children"]], ["intro"])
         self.assertEqual([c["content"][0]["t"] for c in t[1]["children"]], ["inside small"])
+
+
+class FolderImportTests(unittest.TestCase):
+    """Folders and Notion export zips import as pages with sub-pages."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        _, self.store = AccountManager(self.root / "data").create_account("imp", [])
+        self.repo = Repo(self.store)
+        hx = "0123456789abcdef0123456789abcdef"
+        exp = self.root / "export"
+        (exp / f"Trip {hx}").mkdir(parents=True)
+        (exp / f"Trip {hx}.md").write_text(
+            f"# Trip\n\nPlans below.\n\n[Day 1](Trip%20{hx}/Day%201%20{hx}.md)\n\n"
+            f"See [the list](Trip%20{hx}/Packing%20{hx}.md) too.\n")
+        (exp / f"Trip {hx}" / f"Day 1 {hx}.md").write_text("# Day 1\n\n- fly\n")
+        (exp / f"Trip {hx}" / f"Packing {hx}.md").write_text("# Packing\n\n- [ ] socks\n")
+        (exp / f"Trip {hx}" / "photo.png").write_bytes(b"x")
+        self.exp = exp
+
+    def tearDown(self):
+        self.store.close()
+        self.tmp.cleanup()
+
+    def _check(self, tops):
+        from securewrity.core.md_tree import import_paths  # noqa: F401
+        self.assertEqual(len(tops), 1)
+        trip = self.repo.get_page(tops[0])
+        self.assertEqual(trip["title"], "Trip")
+        kids = {p["title"]: p["id"] for p in self.repo.list_pages() if p["parent_id"] == trip["id"]}
+        self.assertEqual(set(kids), {"Day 1", "Packing"})
+        blocks = self.repo.get_blocks(trip["id"])
+        self.assertEqual([b["type"] for b in blocks], ["paragraph", "page", "paragraph"])
+        self.assertEqual(blocks[1]["props"]["page_id"], kids["Day 1"])
+        link = [r for r in blocks[2]["content"] if r.get("link")][0]
+        self.assertEqual(link["link"], f"page:{kids['Packing']}")
+        self.assertEqual(self.repo.get_blocks(kids["Packing"])[0]["type"], "todo")
+
+    def test_folder(self):
+        from securewrity.core.md_tree import import_paths
+        tops, count = import_paths(self.repo, [self.exp])
+        self.assertEqual(count, 3)
+        self._check(tops)
+
+    def test_notion_zip_with_inner_zip(self):
+        import shutil
+        import zipfile
+        from securewrity.core.md_tree import import_paths
+        inner = self.root / "Part-1.zip"
+        shutil.make_archive(str(inner.with_suffix("")), "zip", self.exp)
+        outer = self.root / "Export.zip"
+        with zipfile.ZipFile(outer, "w") as z:
+            z.write(inner, "Part-1.zip")
+        tops, count = import_paths(self.repo, [outer])
+        self.assertEqual(count, 3)
+        self._check(tops)
+
+    def test_loose_notes_get_a_wrapper_page_and_import_under_a_parent(self):
+        from securewrity.core.md_tree import import_paths
+        notes = self.root / "Notes"
+        notes.mkdir()
+        (notes / "a.md").write_text("alpha")
+        (notes / "b.md").write_text("beta")
+        parent = self.repo.create_page(title="Inbox")
+        tops, count = import_paths(self.repo, [notes], parent_id=parent)
+        self.assertEqual(count, 3)
+        wrapper = self.repo.get_page(tops[0])
+        self.assertEqual((wrapper["title"], wrapper["parent_id"]), ("Notes", parent))
+        kids = [p["title"] for p in self.repo.list_pages() if p["parent_id"] == wrapper["id"]]
+        self.assertEqual(kids, ["a", "b"])

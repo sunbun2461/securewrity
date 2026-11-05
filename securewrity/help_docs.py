@@ -176,8 +176,16 @@ or heading.</p>
 <p><b>Copying from a web page or a chat window</b> (selecting the text rather than using a Copy button) works too: the
 headings, lists, bold and links come across.</p>
 <p><b>Plain text:</b> {kbd('Ctrl', 'Shift', 'V')} pastes exactly what you copied, with no conversion.</p>
-<p><b>A whole file:</b> account menu → <b>Import Markdown file…</b> makes a new page from a <code>.md</code> file,
-for example a page exported from Notion.</p>
+<p><b>Whole files, folders and Notion exports:</b> click <b>📥 Import</b> at the bottom of the sidebar.</p>
+<ul>
+<li><b>Markdown files or Notion .zip…</b> picks one or more <code>.md</code> files, or the <code>.zip</code>
+Notion gives you from <i>Settings → Export → Markdown &amp; CSV</i> (no need to unzip it).</li>
+<li><b>A folder of pages…</b> picks a folder; every <code>.md</code> file inside becomes a page.</li>
+</ul>
+<p>Sub-pages come across as sub-pages: a folder named like a file (<code>Trip.md</code> and <code>Trip/</code>)
+holds that page's sub-pages, and other folders become pages of their own. Links between the files turn into
+links to the new pages. To put the import inside an existing page, right-click it in the sidebar →
+<b>Import Markdown here…</b>.</p>
 <p>Not supported yet: images (they become links), real tables, columns and databases.</p>
 """, 2)
     sec("lists", "Lists and to-dos", f"""
