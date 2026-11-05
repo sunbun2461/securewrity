@@ -82,10 +82,13 @@ class BlockTextEdit(QTextEdit):
     # this block while highlighting text switches to selecting whole blocks
     _sel_press = None
     _ranging = False
+    _left_down = False
 
     def mousePressEvent(self, e):
         ed = self.bw.editor
         self._ranging = False
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._left_down = True
         if e.button() == Qt.MouseButton.LeftButton and ed.is_in_selection(self.bw):
             self._sel_press = e.position().toPoint()
             return
@@ -99,7 +102,12 @@ class BlockTextEdit(QTextEdit):
                 self._sel_press = None
                 ed.start_drag(self.bw)
             return
-        if e.buttons() & Qt.MouseButton.LeftButton:
+        # only while the button pressed here is still down: QTextEdit's autoscroll timer sends
+        # made-up "left button held" moves, which must never keep a block highlight going
+        held = self._left_down
+        if not held:
+            self._ranging = False
+        if held and e.buttons() & Qt.MouseButton.LeftButton:
             y = e.position().y()
             if self._ranging or y < -4 or y > self.viewport().height() + 4:
                 self._ranging = True
@@ -110,6 +118,8 @@ class BlockTextEdit(QTextEdit):
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._left_down = False
         if self._sel_press is not None:  # a plain click on a selected block: back to typing there
             pos, self._sel_press = self._sel_press, None
             self.bw.editor.clear_selection()
@@ -118,6 +128,10 @@ class BlockTextEdit(QTextEdit):
             return
         if self._ranging:
             self._ranging = False
+            super().mouseReleaseEvent(e)  # lets QTextEdit stop its selection and autoscroll timer
+            c = self.textCursor()
+            c.clearSelection()
+            self.setTextCursor(c)
             return
         super().mouseReleaseEvent(e)
         anchor = self.anchorAt(e.pos())

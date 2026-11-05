@@ -59,6 +59,9 @@ class SelectionMixin:
             self.toolbar.hide()
             self.slash.close_menu()
             self.setFocus(Qt.FocusReason.OtherFocusReason)
+            n = len(self.selected_blocks())
+            self.set_status("selection", f"{n} block{'s' if n != 1 else ''} selected: drag to move, "
+                                         f"Backspace deletes, Esc or click elsewhere to stop")
 
     def is_in_selection(self, bw) -> bool:
         sel = getattr(self, "_selected", None)
@@ -108,8 +111,16 @@ class SelectionMixin:
                 first = first or b
                 b.set_selected(False)
         self._selected = set()
+        self.set_status("selection", "")
         if refocus and first is not None:
             self.focus_block(first, "end")
+
+    def focusOutEvent(self, e):
+        """Clicking anywhere else (title, sidebar, another app) ends the selection; menus don't."""
+        super().focusOutEvent(e)
+        if e.reason() not in (Qt.FocusReason.PopupFocusReason, Qt.FocusReason.ActiveWindowFocusReason) \
+                and not getattr(self, "_dragging", None):
+            self.clear_selection()
 
     def copy_selected(self):
         tops = self.selected_blocks()
