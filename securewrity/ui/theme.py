@@ -122,6 +122,7 @@ def stylesheet() -> str:
     #SidebarHeader, #SectionLabel {{ color: {c['muted']}; font-size: 12px; font-weight: 600; }}
     QToolButton, QPushButton#Flat {{ background: transparent; border: none; border-radius: 4px; padding: 4px 6px; }}
     QToolButton:hover, QPushButton#Flat:hover {{ background: {c['hover']}; }}
+    QToolButton#DragHandle {{ color: {c['muted']}; padding: 0; font-size: 11px; }}
     QPushButton#SideButton {{ text-align: left; background: transparent; border: none; border-radius: 4px;
         padding: 5px 8px; color: {c['muted']}; }}
     QPushButton#SideButton:hover {{ background: {c['hover']}; color: {c['text']}; }}

@@ -17,12 +17,40 @@ from .sidebar import Sidebar
 
 
 class _ActivityFilter(QObject):
+    """Tells auto-lock that the user is active (a key, click or wheel turn).
+
+    An app-wide Python event filter sees every event in the app (paints, layouts, mouse moves...),
+    which makes everything slower. So it only listens until it notices one input, then steps aside;
+    a timer re-arms it every 20 s. Auto-lock may therefore fire up to 20 s early, never late."""
+    TYPES = (QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress, QEvent.Type.Wheel)
+
     def __init__(self, cb):
         super().__init__()
         self.cb = cb
+        self.armed = False
+        self.rearm_timer = QTimer(self, interval=20_000, timeout=self.arm)
+
+    def start(self):
+        self.arm()
+        self.rearm_timer.start()
+
+    def stop(self):
+        self.rearm_timer.stop()
+        self._disarm()
+
+    def arm(self):
+        if not self.armed:
+            QApplication.instance().installEventFilter(self)
+            self.armed = True
+
+    def _disarm(self):
+        if self.armed:
+            QApplication.instance().removeEventFilter(self)
+            self.armed = False
 
     def eventFilter(self, obj, ev):
-        if ev.type() in (QEvent.Type.KeyPress, QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
+        if ev.type() in self.TYPES:
+            self._disarm()
             self.cb()
         return False
 
@@ -65,7 +93,6 @@ class MainWindow(QMainWindow):
 
         self._install_shortcuts()
         self.activity = _ActivityFilter(self._activity)
-        QApplication.instance().installEventFilter(self.activity)
         self.lock_timer = QTimer(self, singleShot=True, timeout=self._autolock)
         self.setup_autolock()
 
@@ -430,6 +457,9 @@ class MainWindow(QMainWindow):
         self._lock_ms = int(minutes) * 60_000 if minutes else 0
         if self._lock_ms:
             self.lock_timer.start(self._lock_ms)
+            self.activity.start()
+        else:
+            self.activity.stop()  # no auto-lock: no need to watch input at all
 
     def _activity(self):
         if self._lock_ms:
@@ -450,7 +480,7 @@ class MainWindow(QMainWindow):
             pass
         for t in (self.lock_timer, self.refresh_timer, self.editor.save_timer, self.editor.title_timer):
             t.stop()
-        QApplication.instance().removeEventFilter(self.activity)
+        self.activity.stop()
         self.editor.slash.close()
         if getattr(self, "help_window", None) is not None:
             self.help_window.close()

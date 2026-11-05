@@ -215,10 +215,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.title.setText(page["title"])
         self._render_icon(page["icon"])
         self.apply_width(bool(page["props"].get("full_width")))
-        for data in self.repo.get_blocks(page_id):
-            self._insert_widget(BlockWidget(self, data), None, len(self.blocks))
-        if not self.blocks:
-            self._insert_widget(BlockWidget(self, {"type": "paragraph"}), None, 0)
+        self._fill(self.repo.get_blocks(page_id))
         self._loading = False
         self.restructure()
         self.refresh_header()
@@ -240,12 +237,21 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.toolbar.hide()
         self._loading = True
         self._clear_widgets()
-        for data in tree:
-            self._insert_widget(BlockWidget(self, data), None, len(self.blocks))
-        if not self.blocks:
-            self._insert_widget(BlockWidget(self, {"type": "paragraph"}), None, 0)
+        self._fill(tree)
         self._loading = False
         self.restructure()
+
+    def _fill(self, tree: list[dict]):
+        """Create the page's blocks. The block area stays hidden meanwhile, so Qt lays it out and
+        styles it once at the end instead of once per block (much faster on long pages)."""
+        self.blocks_host.hide()
+        try:
+            for data in tree:
+                self._insert_widget(BlockWidget(self, data), None, len(self.blocks))
+            if not self.blocks:
+                self._insert_widget(BlockWidget(self, {"type": "paragraph"}), None, 0)
+        finally:
+            self.blocks_host.show()
 
     def reload_keep_focus(self):
         if self.page_id:

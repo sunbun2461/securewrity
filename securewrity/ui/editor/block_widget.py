@@ -225,7 +225,7 @@ class BlockWidget(QWidget):
         self.handle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.handle.setCursor(Qt.CursorShape.PointingHandCursor)
         self.handle.setToolTip("Drag to move · click for the block menu · Shift+click to select")
-        self.handle.setStyleSheet(f"QToolButton{{color:{theme.t('muted')}; padding:0; font-size:11px;}}")
+        self.handle.setObjectName("DragHandle")  # styled by the app stylesheet (per-widget styles are slow)
         sp = self.handle.sizePolicy()
         sp.setRetainSizeWhenHidden(True)
         self.handle.setSizePolicy(sp)
@@ -254,12 +254,14 @@ class BlockWidget(QWidget):
         self.child_layout.setSpacing(0)
         outer.addWidget(self.child_box)
 
-        self.empty_hint = QLabel("Empty toggle. Click or press Enter to add content.")
-        self.empty_hint.setObjectName("Muted")
-        self.empty_hint.setContentsMargins(CHILD_INDENT + HANDLE_W + 4, 2, 0, 4)
-        self.empty_hint.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.empty_hint.mousePressEvent = lambda e: editor.add_first_child(self)
-        outer.addWidget(self.empty_hint)
+        self.empty_hint = None  # only toggles need one (a block's type never changes in place)
+        if self.btype.toggle:
+            self.empty_hint = QLabel("Empty toggle. Click or press Enter to add content.")
+            self.empty_hint.setObjectName("Muted")
+            self.empty_hint.setContentsMargins(CHILD_INDENT + HANDLE_W + 4, 2, 0, 4)
+            self.empty_hint.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.empty_hint.mousePressEvent = lambda e: editor.add_first_child(self)
+            outer.addWidget(self.empty_hint)
 
         for c in data.get("children") or []:
             child = BlockWidget(editor, c, self)
@@ -386,7 +388,8 @@ class BlockWidget(QWidget):
     def update_collapsed(self):
         collapsed = self.is_collapsed()
         self.child_box.setVisible(not collapsed and bool(self.children))
-        self.empty_hint.setVisible(self.btype.toggle and not collapsed and not self.children)
+        if self.empty_hint is not None:
+            self.empty_hint.setVisible(not collapsed and not self.children)
         self.btype.refresh(self)
 
     def cursor_pos(self) -> int:
