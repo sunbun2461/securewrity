@@ -417,6 +417,7 @@ class MainWindow(QMainWindow):
     # --- theme / auto-lock / shutdown ------------------------------------------------
     def apply_theme(self):
         self.editor.reload_keep_focus()
+        self.editor.paint_history_icons()
         self.sidebar.refresh()
         if getattr(self, "help_window", None) is not None:
             self.help_window.retheme()

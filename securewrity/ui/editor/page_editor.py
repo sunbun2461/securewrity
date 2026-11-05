@@ -15,6 +15,9 @@ from .. import theme
 from . import richtext
 from ...core.markdown_import import looks_like_markdown, parse_markdown
 from .block_widget import BlockWidget
+from .dragdrop import DragDropMixin
+from .history import HistoryMixin, arrow_icon
+from .selection import SelectionMixin
 from .richtext import html_to_markdown
 from .popups import EmojiPicker, InlineToolbar, SlashMenu, add_color_actions
 
@@ -63,7 +66,7 @@ class _ClickArea(QWidget):
         self.cb()
 
 
-class PageEditor(QWidget):
+class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
     def __init__(self, ctx):
         super().__init__()
         self.ctx = ctx
@@ -90,6 +93,16 @@ class PageEditor(QWidget):
         self.status = QLabel()
         self.status.setObjectName("Muted")
         self.bar_layout.addWidget(self.status)
+        self.undo_btn = QToolButton()
+        self.undo_btn.setToolTip("Undo (Ctrl+Z)")
+        self.undo_btn.clicked.connect(self.undo)
+        self.redo_btn = QToolButton()
+        self.redo_btn.setToolTip("Redo (Ctrl+Shift+Z or Ctrl+Y)")
+        self.redo_btn.clicked.connect(self.redo)
+        self.paint_history_icons()
+        for b in (self.undo_btn, self.redo_btn):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.bar_layout.addWidget(b)
         self.fav_btn = QToolButton()
         self.fav_btn.setToolTip("Add to favorites")
         self.fav_btn.clicked.connect(self.toggle_favorite)
@@ -163,12 +176,16 @@ class PageEditor(QWidget):
         col.addStretch(1)
         self.scroll.setWidget(canvas)
         root.addWidget(self.scroll, 1)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # holds the keyboard while blocks are selected
+        self._selected = set()
+        self.setup_drag_drop(canvas)
 
         # timers & popups ---------------------------------------------------
         self.save_timer = QTimer(self, singleShot=True, interval=600, timeout=self.save_now)
         self.title_timer = QTimer(self, singleShot=True, interval=500, timeout=self._save_title)
         self.slash = SlashMenu(self)
         self.toolbar = InlineToolbar(self, self)
+        self.history_reset()
 
     # =====================================================================
     # loading & saving
@@ -185,11 +202,7 @@ class PageEditor(QWidget):
         self.slash.close_menu()
         self.toolbar.hide()
         self._loading = True
-        for b in self.blocks:
-            b.setParent(None)
-            b.deleteLater()
-        self.blocks = []
-        self.current = None
+        self._clear_widgets()
         self.page_id = page_id
         page = self.repo.get_page(page_id)
         if not page:
@@ -206,7 +219,29 @@ class PageEditor(QWidget):
         self.restructure()
         self.refresh_header()
         self.scroll.verticalScrollBar().setValue(0)
+        self.history_reset()
         self.ctx.events.emit("page_opened", page_id)
+
+    def _clear_widgets(self):
+        self._selected = set()
+        for b in self.blocks:
+            b.setParent(None)
+            b.deleteLater()
+        self.blocks = []
+        self.current = None
+
+    def _rebuild(self, tree: list[dict]):
+        """Replace the page's blocks with `tree` (used by undo / redo)."""
+        self.slash.close_menu()
+        self.toolbar.hide()
+        self._loading = True
+        self._clear_widgets()
+        for data in tree:
+            self._insert_widget(BlockWidget(self, data), None, len(self.blocks))
+        if not self.blocks:
+            self._insert_widget(BlockWidget(self, {"type": "paragraph"}), None, 0)
+        self._loading = False
+        self.restructure()
 
     def reload_keep_focus(self):
         if self.page_id:
@@ -216,6 +251,7 @@ class PageEditor(QWidget):
     def changed(self):
         if not self._loading and self.page_id:
             self.save_timer.start()
+            self.update_history_buttons()
 
     def save_now(self):
         self.save_timer.stop()
@@ -227,6 +263,8 @@ class PageEditor(QWidget):
         tree = [b.to_data() for b in self.blocks]
         self.repo.save_blocks(self.page_id, tree)
         self.ctx.events.emit("page_saved", self.page_id)
+        self.checkpoint()
+        self.update_history_buttons()
 
     def tree_data(self) -> list[dict]:
         return [b.to_data() for b in self.blocks]
@@ -310,7 +348,14 @@ class PageEditor(QWidget):
                 first = self.insert_block({"type": "paragraph"}, None, 0)
             self.focus_block(first, "start")
 
+    def paint_history_icons(self):
+        self.undo_btn.setIcon(arrow_icon(theme.t("text"), redo=False))
+        self.redo_btn.setIcon(arrow_icon(theme.t("text"), redo=True))
+
     def eventFilter(self, obj, ev):
+        if obj is getattr(self, "_canvas", None) and ev.type() in (
+                ev.Type.DragEnter, ev.Type.DragMove, ev.Type.DragLeave, ev.Type.Drop):
+            return self.drag_event(ev)
         if obj is self.title and ev.type() == ev.Type.KeyPress and ev.key() == K.Key_Down and self.blocks:
             self.focus_block(self.blocks[0], "start")
             return True
@@ -326,6 +371,10 @@ class PageEditor(QWidget):
 
     def show_page_menu(self):
         m = QMenu(self)
+        m.addAction("↶  Undo\tCtrl+Z", self.undo).setEnabled(self.can_undo())
+        m.addAction("↷  Redo\tCtrl+Shift+Z", self.redo).setEnabled(self.can_redo())
+        m.addAction("▣  Select all blocks\tCtrl+A twice", self.select_all_blocks)
+        m.addSeparator()
         self.ctx.window.populate_page_menu(m, self.page_id)
         m.exec(self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height())))
 
@@ -349,12 +398,14 @@ class PageEditor(QWidget):
         return parent.child_layout if parent else self.root_layout
 
     def _insert_widget(self, bw, parent, index):
+        self.before_structure_change()
         bw.parent_block = parent
         self._list(parent).insert(index, bw)
         self._layout(parent).insertWidget(index, bw)
         bw.show()
 
     def _detach(self, bw):
+        self.before_structure_change()
         lst = self.siblings(bw)
         if bw in lst:
             lst.remove(bw)
@@ -707,6 +758,15 @@ class PageEditor(QWidget):
         cur = te.textCursor()
         pos, has_sel = cur.position(), cur.hasSelection()
 
+        if self.history_key(e):
+            return True
+        if ctrl and not shift and key == K.Key_A:
+            text = te.toPlainText()
+            if not text or (cur.selectionStart() == 0 and cur.selectionEnd() == len(text)):
+                self.select_all_blocks()  # second Ctrl+A: every block on the page
+                return True
+            return False
+
         if self.slash.isVisible() and self.slash.bw is bw:
             if key in (K.Key_Up, K.Key_Down):
                 self.slash.move_sel(-1 if key == K.Key_Up else 1)
@@ -717,6 +777,9 @@ class PageEditor(QWidget):
             if key == K.Key_Escape:
                 self.slash.close_menu()
                 return True
+        if key == K.Key_Escape:
+            self.select_blocks([bw])
+            return True
 
         if key in (K.Key_Return, K.Key_Enter):
             if ctrl:
@@ -850,9 +913,32 @@ class PageEditor(QWidget):
             c.removeSelectedText()
             self.turn_into(bw, "code", cursor=0)
 
+    def history_key(self, e) -> bool:
+        key, mods = e.key(), e.modifiers()
+        if not mods & CTRL:
+            return False
+        if key == K.Key_Z:
+            self.redo() if mods & SHIFT else self.undo()
+            return True
+        if key == K.Key_Y:
+            self.redo()
+            return True
+        return False
+
+    def keyPressEvent(self, e):
+        if self.history_key(e) or (self.has_selection() and self.selection_key(e)):
+            return
+        super().keyPressEvent(e)
+
     def handle_nontext_key(self, bw, e):
         key, mods = e.key(), e.modifiers()
-        if key in (K.Key_Backspace, K.Key_Delete):
+        if self.history_key(e):
+            return
+        if key == K.Key_Escape:
+            self.select_blocks([bw])
+        elif key == K.Key_A and mods & CTRL:
+            self.select_all_blocks()
+        elif key in (K.Key_Backspace, K.Key_Delete):
             self.delete_block(bw)
         elif key == K.Key_Up:
             if mods & CTRL and mods & SHIFT:
@@ -1055,6 +1141,7 @@ class PageEditor(QWidget):
         m.addAction("Outdent\tShift+Tab", lambda: self.outdent(bw))
         for label, cb in self.ctx.api.block_menu_items:
             m.addAction(label, lambda cb=cb: cb(bw))
+        m.addAction("Select\tEsc", lambda: self.select_blocks([bw]))
         m.addSeparator()
         m.addAction("Delete", lambda: self.delete_block(bw))
 

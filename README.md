@@ -6,6 +6,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Toggle headings** (H1–H4) and regular-size toggles that fold everything inside them
 - **Colors**: 20 colors (10 regular, 10 pastel) for text or background, per block or for selected words
 - **Pages inside pages**, any depth, with a draggable **sidebar** tree, favorites and trash
+- **Drag blocks** by their ⋮⋮ handle, including into toggles; **select blocks** (Ctrl+A twice = whole page) to delete, copy or move them together; page-wide **undo / redo** (Ctrl+Z / Ctrl+Shift+Z or the arrows)
 - **Links**: sub-page blocks, “link to page” blocks, inline `[[` links, and a “Linked from” backlinks list
 - Headings, bullets, numbered lists, to-dos, quotes, callouts, code, dividers
 - **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); sidebar → 📥 Import brings in `.md` files, folders and Notion export `.zip`s with their sub-pages and links
@@ -13,7 +14,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Accounts**: a Guest account (no password) plus any number of user accounts
 - **Encryption**, optional and available at any time: password, passphrase (can be generated) or a
   generated **seed phrase** (12/24-word BIP39), or a mix of them (e.g. password + recovery seed phrase)
-- **Help** (F1, the ? button, or Help in the sidebar): searchable docs with screenshots and a clickable contents list
+- **Help** (F1, the ? button, or Help in the sidebar): searchable docs with screenshots and a clickable contents list; problems are logged to `~/.local/share/securewrity/securewrity.log` (no note contents)
 - **Plugins**: drop a `.py` file into `~/.local/share/securewrity/plugins/`
 
 ## Install (Kali / Debian)

@@ -257,15 +257,49 @@ Sub-pages go with their parent.</p>
     # ---------------------------------------------------------------- blocks
     sec("blocks", "Moving and changing blocks", f"""
 <p>Hover over a block and a ⋮⋮ handle appears on its left. Click it for: <b>Turn into</b> another type, <b>Color</b>,
-Duplicate, Move up / down, Indent / Outdent and Delete. Right-clicking text shows the same options.</p>
+Duplicate, Move up / down, Indent / Outdent, Select and Delete. Right-clicking text shows the same options.</p>
 {table([
     [kbd('Ctrl', 'Shift', '↑') + " / " + kbd('↓'), "Move the block up / down"],
     [kbd('Tab') + " / " + kbd('Shift', 'Tab'), "Indent / outdent"],
     [kbd('Ctrl', 'D'), "Duplicate"],
     [kbd('Backspace') + " at the start", "Join with the block above"],
-    [kbd('Ctrl', 'Z'), "Undo typing inside a block"],
 ], ["Keys", "Does"])}
-""")
+""", 1)
+    sec("drag", "Dragging blocks (and into toggles)", f"""
+<p>Press on a block's ⋮⋮ handle and drag. A blue line shows where it will land; let go to drop it there.</p>
+{img("drag.png", "Dragging onto a toggle: the line is indented, so the block goes inside it")}
+{table([
+    ["Over the top part of a block", "Drops above it"],
+    ["Over a toggle", "Drops <b>inside</b> it, as its first item (the line is indented). A closed toggle opens."],
+    ["Over the bottom part of a block", "Drops below it"],
+    ["Below the last block", "Drops at the end of the page"],
+], ["Line shows when you are", "Result"])}
+{tip("To get a block back out of a toggle, drag it to the top part of a block outside the toggle, "
+     "or press " + kbd('Shift', 'Tab') + ".")}
+<p>Dragging a selected block moves every selected block together. Near the top or bottom of the window the page
+scrolls by itself.</p>
+""", 2)
+    sec("select", "Selecting blocks: the whole page, delete, copy", f"""
+{img("select.png", "Selected blocks are tinted blue")}
+{steps(
+    "Press " + kbd('Ctrl', 'A') + " once to select the text in the block you are in.",
+    "Press " + kbd('Ctrl', 'A') + " again to select <b>every block on the page</b>.",
+    "Press " + kbd('Backspace') + " or " + kbd('Delete') + " to delete them, or " + kbd('Ctrl', 'C') + " / "
+    + kbd('Ctrl', 'X') + " to copy / cut.")}
+<p>Other ways to select: {kbd('Esc')} selects the block you are typing in, and {kbd('Shift')}+click on ⋮⋮ handles
+adds or removes blocks one at a time. Page ⋯ menu → <b>Select all blocks</b> does the same as Ctrl+A twice.</p>
+<p>Copied blocks paste back as real blocks (toggles, colors and all) anywhere in Securewrity, and as plain text in
+other apps. {kbd('Esc')} or a click in the text stops selecting.</p>
+""", 2)
+    sec("undo", "Undo and redo", f"""
+{img("undo.png", "The undo and redo arrows, top right of every page")}
+<p>{kbd('Ctrl', 'Z')} undoes, {kbd('Ctrl', 'Shift', 'Z')} or {kbd('Ctrl', 'Y')} redoes, or click the arrows at the top right.
+Undo covers everything on the page: typing (in chunks, each time you pause), new and deleted blocks, moves, drags,
+pastes, colors and "Turn into".</p>
+{tip("Deleted a sub-page block by mistake? Undo brings the block back and takes the sub-page out of the Trash.")}
+<p>Each page keeps its own history while it is open. Switching to another page or locking starts it fresh. The page
+title has its own undo while you are typing in it.</p>
+""", 2)
 
     # ---------------------------------------------------------------- security
     sec("security", "Security and encryption", f"""
@@ -320,6 +354,9 @@ reopen the last page. {kbd('Ctrl', 'Shift', 'L')} flips between dark and light.<
         [kbd('/'), "Block menu"],
         [kbd('[') + kbd('[') + " or " + kbd('Ctrl', 'K'), "Link"],
         [kbd('Ctrl', 'Enter'), "Open / close a toggle, tick a to-do"],
+        [kbd('Ctrl', 'Z') + " / " + kbd('Ctrl', 'Shift', 'Z'), "Undo / redo"],
+        [kbd('Ctrl', 'A') + " twice", "Select every block on the page"],
+        [kbd('Esc'), "Select the current block"],
         [kbd('Ctrl', 'Q'), "Quit"],
     ], ["Keys", "Does"]))
     sec("plugins", "Plugins", f"""
@@ -332,5 +369,25 @@ project folder shows an example. Plugins can add commands, shortcuts, block type
 <p>Everything is in <code>~/.local/share/securewrity/users/&lt;name&gt;/</code>. Encrypted accounts are one file,
 <code>data.securewrity</code>, plus a <code>.bak</code> copy of the previous save. Unprotected accounts use <code>data.db</code>.</p>
 <p>To back up, copy that folder. An encrypted backup still needs your password to open.</p>
+""")
+    sec("trouble", "When something goes wrong: logs", f"""
+<p>Securewrity keeps a short diary of what it does in <code>~/.local/share/securewrity/securewrity.log</code>:
+every start (with what launched it), every import and every error. It never contains your notes or passwords.
+Hard crashes write their details to <code>crash.log</code> in the same folder.</p>
+<p><b>To report a problem</b>, open a terminal and copy what this shows:</p>
+<pre>tail -50 ~/.local/share/securewrity/securewrity.log
+cat ~/.local/share/securewrity/crash.log</pre>
+<p><b>To watch it live</b>, start Securewrity from a terminal by typing <code>securewrity</code>. Messages appear there
+as they happen.</p>
+<p><b>Other places Linux keeps messages</b> (useful for problems from before you updated):</p>
+{table([
+    ["<code>tail -200 ~/.xsession-errors</code>", "Output of apps started from the menu (Xfce, Kali's default)"],
+    ["<code>journalctl --user -b | grep -i -A5 securewrity</code>", "Your session's log since this boot"],
+    ["<code>journalctl -k -b | grep -i -E \"oom|killed\"</code>", "Whether the system closed it for using too much memory"],
+    ["<code>coredumpctl list</code>", "Programs that crashed hard"],
+    ["<code>ps -ef | grep -c \"[s]ecurewrity\"</code>", "How many copies are running right now"],
+], ["Command", "Shows"])}
+{tip("Lines like <i>atk-bridge</i> or <i>AT-SPI</i> in the terminal are harmless messages from Linux's "
+     "accessibility service, not errors in your notes.")}
 """)
     return S

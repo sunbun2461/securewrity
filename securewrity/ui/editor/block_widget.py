@@ -10,6 +10,7 @@ from ...blocks.registry import registry
 from ...core.repo import new_id
 from .. import theme
 from . import richtext
+from .dragdrop import DRAG_MIME, DragHandle
 
 HANDLE_W = 20
 CHILD_INDENT = 26
@@ -60,8 +61,22 @@ class BlockTextEdit(QTextEdit):
             self.bw.editor.after_key(self.bw, e)
 
     def insertFromMimeData(self, source):
+        blocks = self.bw.editor.blocks_from_mime(source)
+        if blocks:  # blocks copied inside Securewrity paste back exactly
+            self.bw.editor.insert_parsed(self.bw, blocks)
+            return
         html = source.html() if source.hasHtml() else ""
         self.bw.editor.handle_paste(self.bw, source.text(), html, plain=getattr(self, "_paste_plain", False))
+
+    # a block being dragged by its handle is not text: let the page handle it
+    def dragEnterEvent(self, e):
+        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dragMoveEvent(e)
+
+    def dropEvent(self, e):
+        e.ignore() if e.mimeData().hasFormat(DRAG_MIME) else super().dropEvent(e)
 
     def mouseMoveEvent(self, e):
         anchor = self.anchorAt(e.pos())
@@ -118,6 +133,7 @@ class NonTextBody(QFrame):
     def focusInEvent(self, e):
         self._style(True)
         self.bw.editor.current = self.bw
+        self.bw.editor.clear_selection()
 
     def focusOutEvent(self, e):
         self._style(False)
@@ -153,18 +169,18 @@ class BlockWidget(QWidget):
         row.setContentsMargins(0, self.btype.top_margin, 0, 1)
         row.setSpacing(2)
 
-        self.handle = QToolButton()
+        self.selected = False
+        self.handle = DragHandle(self)
         self.handle.setText("⋮⋮")
         self.handle.setFixedWidth(HANDLE_W)
         self.handle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.handle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.handle.setToolTip("Click for block menu")
+        self.handle.setToolTip("Drag to move · click for the block menu · Shift+click to select")
         self.handle.setStyleSheet(f"QToolButton{{color:{theme.t('muted')}; padding:0; font-size:11px;}}")
         sp = self.handle.sizePolicy()
         sp.setRetainSizeWhenHidden(True)
         self.handle.setSizePolicy(sp)
         self.handle.hide()
-        self.handle.clicked.connect(lambda: editor.show_block_menu(self))
         row.addWidget(self.handle, 0, Qt.AlignmentFlag.AlignTop)
 
         self.prefix = self.btype.make_prefix(self)
@@ -233,6 +249,8 @@ class BlockWidget(QWidget):
         if self.type_key == "todo" and self.props.get("checked"):
             color = theme.t("muted")
         bg = theme.bg_color(self.props.get("bg"))
+        if self.selected:
+            bg = "rgba(35, 131, 226, 0.28)"  # translucent accent: reads on both themes and over colors
         css = f"background:{bg};border-radius:4px;" if bg else ""
         css += self.btype.row_css(self)
         self.row.setStyleSheet(f"QFrame#Row{{{css}}}")
@@ -249,9 +267,15 @@ class BlockWidget(QWidget):
             self.prefix.setStyleSheet(self.prefix.styleSheet().split(";color")[0] + f";color:{color}")
         self.btype.refresh(self)
 
+    def set_selected(self, on: bool):
+        if self.selected != on:
+            self.selected = on
+            self.apply_style()
+
     def on_focus(self, focused: bool):
         if focused and self.parent() is not None:  # ignore late focus events of removed blocks
             self.editor.current = self
+            self.editor.clear_selection()
         if self.text:
             ph = self.btype.placeholder if (focused or self.type_key != "paragraph") else ""
             self.text.setPlaceholderText(ph)
@@ -282,6 +306,7 @@ class BlockWidget(QWidget):
                 "props": dict(self.props), "children": [c.to_data() for c in self.children]}
 
     def set_prop(self, key, value):
+        self.editor.before_structure_change()
         if value is None:
             self.props.pop(key, None)
         else:
