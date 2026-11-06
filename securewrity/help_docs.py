@@ -94,7 +94,7 @@ a passphrase or a seed phrase. See <a href='#protect'>Protecting an account</a>.
        "Type a title and press Enter. The cursor moves into the page.",
        "Just start typing. Every Enter makes a new block.",
        f"Type {kbd('/')} on an empty line to pick what kind of block it is.")}
-<p>Changes save by themselves about half a second after you stop typing. {kbd('Ctrl', 'S')} saves right away.</p>
+<p>Changes save by themselves about half a second after you stop typing. {kbd('Ctrl', 'S')} saves right away. A blue <b>✓ Saved</b> flashes in the top bar each time, then fades out.</p>
 """, 2)
 
     # ---------------------------------------------------------------- writing

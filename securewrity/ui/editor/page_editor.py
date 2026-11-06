@@ -1,12 +1,13 @@
 """The page editor: header (icon, title, breadcrumbs) + a tree of BlockWidgets."""
 from __future__ import annotations
 
+import json
 import re
 from html import escape
 
-from PyQt6.QtCore import QPoint, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QTextCharFormat
-from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
+from PyQt6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu,
                              QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
                              QWidget)
 
@@ -94,6 +95,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.status = QLabel()
         self.status.setObjectName("Muted")
         self.bar_layout.addWidget(self.status)
+        self._setup_saved_flash()
         self.undo_btn = QToolButton()
         self.undo_btn.setToolTip("Undo (Ctrl+Z)")
         self.undo_btn.clicked.connect(self.undo)
@@ -221,6 +223,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.refresh_header()
         self.scroll.verticalScrollBar().setValue(0)
         self.history_reset()
+        self._saved_key = (page_id, json.dumps(self.tree_data(), sort_keys=True))
         self.ctx.events.emit("page_opened", page_id)
 
     def _clear_widgets(self):
@@ -272,9 +275,42 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             return
         tree = [b.to_data() for b in self.blocks]
         self.repo.save_blocks(self.page_id, tree)
+        key = (self.page_id, json.dumps(tree, sort_keys=True))
+        if self._saved_key is not None and self._saved_key[0] == self.page_id and key != self._saved_key:
+            self.flash_saved()
+        self._saved_key = key
         self.ctx.events.emit("page_saved", self.page_id)
         self.checkpoint()
         self.update_history_buttons()
+
+    # --- "Saved" flash in the top bar ---------------------------------------------------
+    def _setup_saved_flash(self):
+        self.saved_label = QLabel("✓ Saved")
+        self.saved_label.setContentsMargins(8, 0, 8, 0)
+        self.saved_label.setToolTip("Your changes are saved")
+        fx = QGraphicsOpacityEffect(self.saved_label)
+        fx.setOpacity(0.0)
+        self.saved_label.setGraphicsEffect(fx)
+        self.bar_layout.addWidget(self.saved_label)
+        fade = QPropertyAnimation(fx, b"opacity", self)
+        fade.setDuration(900)
+        fade.setStartValue(1.0)
+        fade.setEndValue(0.0)
+        fade.setEasingCurve(QEasingCurve.Type.InQuad)
+        self._saved_anim = QSequentialAnimationGroup(self)
+        self._saved_anim.addPause(700)  # fully visible for a moment, then fade out
+        self._saved_anim.addAnimation(fade)
+        self._saved_fx = fx
+        self._saved_key = None
+        self.paint_saved_flash()
+
+    def paint_saved_flash(self):
+        self.saved_label.setStyleSheet(f"color:{theme.t('accent')}; font-weight:600;")
+
+    def flash_saved(self):
+        self._saved_anim.stop()
+        self._saved_fx.setOpacity(1.0)
+        self._saved_anim.start()
 
     def tree_data(self) -> list[dict]:
         return [b.to_data() for b in self.blocks]
@@ -350,6 +386,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         if self.page_id:
             self.repo.update_page(self.page_id, title=self.title.text())
             self.ctx.events.emit("pages_changed")
+            self.flash_saved()
 
     def _title_enter(self):
         if self.blocks:
@@ -375,6 +412,8 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
     def paint_history_icons(self):
         self.undo_btn.setIcon(arrow_icon(theme.t("text"), redo=False))
         self.redo_btn.setIcon(arrow_icon(theme.t("text"), redo=True))
+        if hasattr(self, "saved_label"):
+            self.paint_saved_flash()
 
     def eventFilter(self, obj, ev):
         if obj is getattr(self, "_canvas", None):

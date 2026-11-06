@@ -133,7 +133,10 @@ class HistoryMixin:
             if page and page["trashed"]:
                 self.repo.restore_page(pid)
                 restored = True
-        self.repo.save_blocks(self.page_id, self.tree_data())
+        tree = self.tree_data()
+        self.repo.save_blocks(self.page_id, tree)
+        self._saved_key = (self.page_id, json.dumps(tree, sort_keys=True))
+        self.flash_saved()
         if restored:
             self.ctx.events.emit("pages_changed")
         self.ctx.events.emit("page_saved", self.page_id)
