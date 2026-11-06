@@ -29,6 +29,10 @@ def _plain(blocks, depth=0) -> list[str]:
         text = "".join(r.get("t", "") for r in b.get("content", []))
         if b["type"] == "divider":
             text = "---"
+        elif b["type"] == "table":
+            rows = b.get("props", {}).get("rows") or []
+            out += ["    " * depth + "\t".join(map(str, r)) for r in rows]
+            continue
         out.append("    " * depth + text)
         out += _plain(b.get("children", []), depth + 1)
     return out

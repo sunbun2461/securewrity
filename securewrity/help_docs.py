@@ -202,6 +202,21 @@ Right-click it to copy it, save it as a file, or go back to its normal size.</p>
 Very large pictures are shrunk to 2000 pixels wide when added, to keep saving fast.
 Markdown export saves them as files in the page's folder.</p>
 """, 2)
+    sec("tables", "Tables", f"""
+<p>Type <code>/table</code> for a new 3 × 3 table, or paste a Markdown table (from an AI, a README or Notion)
+and it becomes a real table. Tables already on your pages are converted for you. If one is still showing as
+text, open its ⋮⋮ menu and pick <b>Convert to table</b>.</p>
+{table([
+    ["Click a cell", "Type in it"],
+    [f"{kbd('Tab')} / {kbd('Shift', 'Tab')}", "Next / previous cell. Tab on the last cell adds a row"],
+    ["<b>+</b> under or right of the table", "Add a row or a column (shows when the mouse is over the table)"],
+    ["Drag a column's right border", "Make it wider or narrower"],
+    ["Right-click", "Insert or delete rows and columns, header row / column, copy as Markdown"],
+    [f"{kbd('Delete')}", "Clear the selected cells"],
+    [f"{kbd('Ctrl', 'C')} / {kbd('Ctrl', 'V')}", "Copy or paste cells, also to and from a spreadsheet"],
+    [f"{kbd('Esc')}", "Select the whole table, to move or delete it"],
+], head=["Do this", "To"])}
+""", 2)
     sec("lists", "Lists and to-dos", f"""
 <p>Press Enter at the end of a list item to start the next one. Press Enter on an empty item to stop the list.</p>
 <p>{kbd('Tab')} nests an item under the one above, {kbd('Shift', 'Tab')} moves it back out.</p>

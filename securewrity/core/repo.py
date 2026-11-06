@@ -17,7 +17,7 @@ import uuid
 
 from .storage import Store
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MIGRATIONS = {
     1: """
@@ -61,6 +61,7 @@ MIGRATIONS = {
         created REAL NOT NULL
     );
     """,
+    3: "SELECT 1;",  # data only: see _migrate_py
 }
 
 
@@ -70,6 +71,15 @@ def new_id() -> str:
 
 def runs_to_text(runs: list[dict]) -> str:
     return "".join(r.get("t", "") for r in runs or [])
+
+
+def block_text(content, props) -> str:
+    """Searchable text of a block (a table's text is in its cells)."""
+    text = runs_to_text(content)
+    rows = (props or {}).get("rows")
+    if not text and isinstance(rows, list):
+        text = "\n".join("  ".join(str(c) for c in r) for r in rows if isinstance(r, list))
+    return text
 
 
 class Repo:
@@ -90,10 +100,24 @@ class Repo:
         for target in sorted(MIGRATIONS):
             if target > v:
                 self.db.executescript(MIGRATIONS[target])
+                self._migrate_py(target)
                 self.db.execute(f"PRAGMA user_version = {target}")
         self.db.commit()
         if v < SCHEMA_VERSION:
             self.commit()
+
+    def _migrate_py(self, target: int) -> None:
+        if target == 3:
+            # tables used to be stored as code blocks of text; make them real tables
+            from .markdown_import import table_from_text
+            rows = self.db.execute("SELECT id, content FROM blocks WHERE type='code' "
+                                   "AND json_extract(props, '$.language') = 'table'").fetchall()
+            for r in rows:
+                t = table_from_text(runs_to_text(json.loads(r["content"])))
+                if t:
+                    self.db.execute("UPDATE blocks SET type='table', content='[]', props=?, text=? WHERE id=?",
+                                    (json.dumps(t["props"], ensure_ascii=False),
+                                     block_text([], t["props"]), r["id"]))
 
     # --- settings ----------------------------------------------------------
     def get_setting(self, key: str, default=None):
@@ -258,7 +282,7 @@ class Repo:
                 bid = n.get("id") or new_id()
                 rows.append((bid, page_id, parent, float(i), n["type"],
                              json.dumps(n.get("content") or [], ensure_ascii=False),
-                             runs_to_text(n.get("content")),
+                             block_text(n.get("content"), n.get("props")),
                              json.dumps(n.get("props") or {}, ensure_ascii=False), now, now))
                 walk(n.get("children") or [], bid)
 

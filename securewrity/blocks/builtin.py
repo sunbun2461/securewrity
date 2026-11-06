@@ -362,10 +362,33 @@ class ImageBlock(BlockType):
         return f"![image](securewrity-image:{block.get('props', {}).get('file_id', '')})"
 
 
+class TableBlock(BlockType):
+    key, label, icon = "table", "Table", "▦"
+    description = "A grid of cells, like a simple spreadsheet."
+    aliases = ("table", "grid", "spreadsheet", "rows", "columns")
+    group = "Media"
+    has_text = False
+    can_have_children = False
+
+    def default_props(self):
+        return {"rows": [["", "", ""], ["", "", ""], ["", "", ""]], "header_row": True}
+
+    def make_body(self, bw):
+        from ..ui.editor.table import TableBody
+        return TableBody(bw)
+
+    def refresh(self, bw):
+        bw.body.refresh()
+
+    def to_markdown(self, text, block, depth, number=1):
+        from ..ui.editor.table import to_markdown
+        return to_markdown(block.get("props", {}))
+
+
 def register_builtin_blocks() -> None:
     levels = range(1, MAX_HEADING + 1)
     for bt in (Paragraph(), Toggle(),
                *(Heading(n) for n in levels), *(ToggleHeading(n) for n in levels),
                Bullet(), Numbered(), Todo(), Quote(), Callout(), Code(), Divider(),
-               PageBlock(), LinkToPage(), ImageBlock()):
+               PageBlock(), LinkToPage(), ImageBlock(), TableBlock()):
         registry.register(bt)

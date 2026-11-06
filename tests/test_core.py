@@ -257,6 +257,36 @@ class MarkdownImportTests(unittest.TestCase):
         self.assertEqual([c["content"][0]["t"] for c in t[1]["children"]], ["inside small"])
 
 
+class TableTests(unittest.TestCase):
+    def test_markdown_table_becomes_table_block(self):
+        from securewrity.core.markdown_import import parse_markdown
+        b = parse_markdown("| A | **B** |\n|---|:--:|\n| 1 | [x](http://e) |\n")
+        self.assertEqual(b[0]["type"], "table")
+        self.assertEqual(b[0]["props"], {"rows": [["A", "B"], ["1", "x"]], "header_row": True})
+
+    def test_old_text_tables(self):
+        from securewrity.core.markdown_import import table_from_text
+        t = table_from_text("Name | Year\n-----+-----\nAda  | 1843")
+        self.assertEqual(t["props"]["rows"], [["Name", "Year"], ["Ada", "1843"]])
+        self.assertIsNone(table_from_text("just | one line"))
+        self.assertIsNone(table_from_text("print(a)\nprint(b)"))
+
+    def test_upgrade_converts_stored_text_tables_and_search_finds_cells(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, store = AccountManager(Path(tmp)).create_account("t", [])
+            repo = Repo(store)
+            pid = repo.create_page(None, "P")
+            pid = pid["id"] if isinstance(pid, dict) else pid
+            repo.save_blocks(pid, [{"type": "code", "content": [{"t": "a | b\n--+--\nc | d"}],
+                                    "props": {"language": "table"}, "children": []}])
+            store.conn.execute("PRAGMA user_version = 2")
+            repo = Repo(store)  # runs the upgrade
+            b = repo.get_blocks(pid)[0]
+            self.assertEqual((b["type"], b["props"]["rows"]), ("table", [["a", "b"], ["c", "d"]]))
+            self.assertTrue(repo.search("d"))
+            store.close()
+
+
 class ImageImportTests(unittest.TestCase):
     """Images inside an import become image blocks; ones outside it, or on the web, stay links."""
 

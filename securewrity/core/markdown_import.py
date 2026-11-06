@@ -264,20 +264,47 @@ def _classify(line: str) -> tuple[dict, int | None]:
     return b, hlevel
 
 
-def _table_block(rows: list[list[str]]) -> dict:
-    rows = [[_unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in r] for r in rows]
-    rows = [[re.sub(r"\*\*|__|`", "", c) for c in r] for r in rows]
+def _clean_cell(c: str) -> str:
+    c = _unescape(re.sub(r"<br\s*/?>", "\n", c, flags=re.I))
+    c = re.sub(r"<[^>]+>", "", c)
+    c = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", c)       # [text](link) → text
+    return re.sub(r"\*\*|__|`|~~", "", c).strip()
+
+
+def _table_block(rows: list[list[str]], header_row: bool = True) -> dict:
+    """A real table block: props rows = list of rows of cell strings."""
+    rows = [[_clean_cell(c) for c in r] for r in rows]
+    rows = [r for r in rows if r]
     if not rows:
         return _block("paragraph")
     cols = max(len(r) for r in rows)
     rows = [r + [""] * (cols - len(r)) for r in rows]
-    widths = [max(len(r[i]) for r in rows) for i in range(cols)]
-    lines = []
-    for n, r in enumerate(rows):
-        lines.append(" | ".join(c.ljust(widths[i]) for i, c in enumerate(r)).rstrip())
-        if n == 0 and len(rows) > 1:
-            lines.append("-+-".join("-" * w for w in widths))
-    return {"type": "code", "content": [{"t": "\n".join(lines)}], "props": {"language": "table"}, "children": []}
+    return {"type": "table", "content": [],
+            "props": {"rows": rows, "header_row": bool(header_row and len(rows) > 1)}, "children": []}
+
+
+_SEP_MD = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+_SEP_ASCII = re.compile(r"^[-+ ]+$")
+
+
+def table_from_text(text: str) -> dict | None:
+    """Turn table text back into a table block: a Markdown pipe table, or the 'a | b' /
+    '--+--' text older versions of Securewrity made from tables. None if it isn't one."""
+    lines = [l for l in text.replace("\r", "").split("\n") if l.strip()]
+    if len(lines) < 2 or not all("|" in l or _SEP_ASCII.match(l) for l in lines):
+        return None
+    rows, header = [], False
+    for n, l in enumerate(lines):
+        if _SEP_MD.match(l) or ("-" in l and _SEP_ASCII.match(l)):
+            header = header or n == 1
+            continue
+        t = l.strip()
+        if t.startswith("|") and t.endswith("|") and len(t) > 1:
+            t = t[1:-1]
+        rows.append(t.split("|"))
+    if len(rows) < 1 or max(len(r) for r in rows) < 2:
+        return None
+    return _table_block(rows, header_row=header)
 
 
 def parse_markdown(text: str) -> list[dict]:

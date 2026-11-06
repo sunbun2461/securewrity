@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect, QHBox
 from ...blocks.registry import registry
 from .. import theme
 from . import richtext
-from ...core.markdown_import import looks_like_markdown, parse_markdown
+from ...core.markdown_import import looks_like_markdown, parse_markdown, table_from_text
 from .block_widget import BlockWidget
 from .dragdrop import DragDropMixin
 from .history import HistoryMixin, arrow_icon
@@ -811,6 +811,13 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         empty = bw.text is not None and not bw.plain() and not bw.children and bw.type_key == "paragraph"
         return self.insert_images(images, parent, idx if empty else idx + 1)
 
+    def convert_to_table(self, bw):
+        """A code block or paragraph holding Markdown table text → a real table."""
+        t = table_from_text(bw.plain())
+        if t:
+            nb = self.turn_into(bw, "table", props=t["props"])
+            self.focus_block(nb)
+
     def pick_images(self, bw):
         from .images import IMAGE_SUFFIXES, MAX_FILE_BYTES
         from PyQt6.QtWidgets import QFileDialog
@@ -891,6 +898,11 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             last = last.children[-1]
         if last.text:
             self.focus_block(last, "end")
+        elif last.parent_block is None:  # ended with a table / image…: a line below to keep typing on
+            nxt = self.next_visible(last, skip_children=True)
+            if nxt is None or nxt.text is None:
+                nxt = self.insert_after(last, {"type": "paragraph"})
+            self.focus_block(nxt, "start")
         self.changed()
 
     # =====================================================================
@@ -1180,6 +1192,10 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             if nxt is None or nxt.text is None:
                 nxt = self.insert_after(nb, {"type": "paragraph"})
             self.focus_block(nxt, "start")
+            if key == "table":  # start typing in the first cell
+                self.focus_block(nb)
+                nb.body.table.setCurrentCell(0, 0)
+                nb.body.table.edit(nb.body.table.currentIndex())
 
     # =====================================================================
     # inline formatting & links
@@ -1283,8 +1299,11 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         if bw.type_key in ("page", "link_to_page") and bw.props.get("page_id"):
             m.addAction("Open page", lambda: self.ctx.window.open_page(bw.props["page_id"]))
             m.addSeparator()
-        if bw.type_key == "image" and bw.body is not None:
+        if bw.body is not None and hasattr(bw.body, "add_menu_actions"):  # image, table
             bw.body.add_menu_actions(m)
+            m.addSeparator()
+        if bw.text is not None and bw.type_key in ("code", "paragraph") and table_from_text(bw.plain()):
+            m.addAction("▦  Convert to table", lambda: self.convert_to_table(bw))
             m.addSeparator()
         turn = m.addMenu("Turn into")
         for bt in registry.all():
