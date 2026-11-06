@@ -415,6 +415,61 @@ project folder shows an example. Plugins can add commands, shortcuts, block type
 <code>data.securewrity</code>, plus a <code>.bak</code> copy of the previous save. Unprotected accounts use <code>data.db</code>.</p>
 <p>To back up, copy that folder. An encrypted backup still needs your password to open.</p>
 """)
+    sec("usb", "Running from a USB stick", f"""
+<p>There are three ways to carry your notes on a USB stick. Pick one:</p>
+{table([
+    ["<b>1. Just your notes on the stick</b>", "Securewrity is installed on each computer you use",
+     "Plug the stick into any computer that has Securewrity"],
+    ["<b>2. The app and your notes on the stick</b>", "Any Linux computer with Python 3.11+ and PyQt6",
+     "Most Linux computers, nothing else installed"],
+    ["<b>3. The whole system on the stick</b>", "Nothing: you start the computer from the stick",
+     "Any computer that can start from USB"],
+], head=["Option", "The computer needs", "Good for"])}
+
+<p><b>Before you start: format the stick as ext4</b> (in Kali: <i>Disks</i> → pick the stick → ⚙ → Format Partition
+→ <i>Ext4</i>). This erases the stick. Sticks usually come as FAT32 or exFAT, which can't keep files private
+to you, and Securewrity may refuse to save there. Use a USB 3 stick if you can: each save rewrites
+your whole notes file, so a slow stick means slow saves.</p>
+
+<h3>Option 1: just your notes</h3>
+{steps(
+    "Quit Securewrity.",
+    "Copy the folder <code>~/.local/share/securewrity</code> onto the stick, for example as "
+    "<code>securewrity-data</code>.",
+    "Start Securewrity with that folder:<br>"
+    "<code>SECUREWRITY_HOME=/media/$USER/STICK/securewrity-data securewrity</code><br>"
+    "(change <code>STICK</code> to your stick's name: see what's under <code>/media/$USER/</code>).",
+)}
+<p>Without that setting, Securewrity uses the notes in your home folder again. The two copies are separate:
+changes in one don't show up in the other.</p>
+
+<h3>Option 2: the app and your notes</h3>
+{steps(
+    "Copy the Securewrity project folder (the one with <code>install.sh</code> in it) onto the stick, "
+    "as <code>securewrity-app</code>.",
+    "Copy your notes as in option 1, as <code>securewrity-data</code> next to it.",
+    "Make a file on the stick called <code>start-securewrity.sh</code> with this in it:"
+    "<pre>#!/bin/sh\nHERE=\"$(cd \"$(dirname \"$0\")\" &amp;&amp; pwd)\"\ncd \"$HERE/securewrity-app\"\n"
+    "SECUREWRITY_HOME=\"$HERE/securewrity-data\" exec python3 -m securewrity</pre>",
+    "Make it runnable once: <code>chmod +x /media/$USER/STICK/start-securewrity.sh</code>",
+    "On any computer: plug in the stick and run <code>/media/$USER/STICK/start-securewrity.sh</code>.",
+)}
+<p>If a computer doesn't have PyQt6 yet: <code>sudo apt install python3-pyqt6 python3-cryptography</code>.</p>
+
+<h3>Option 3: the whole system</h3>
+<p>Make a Kali "live USB with persistence" (Kali's website has a guide: search for
+<i>Kali live USB persistence</i>). Start the computer from the stick, then install Securewrity inside it as
+usual with <code>./install.sh</code>. Your notes, the app and Kali itself all live on the stick.</p>
+
+<h3>Good habits</h3>
+<ul>
+<li><b>Use a password-protected account.</b> If the stick is lost, nobody can read your notes.</li>
+<li><b>Lock or quit before unplugging.</b> If the stick is pulled out mid-save, the last good copy
+(<code>.bak</code>) is still there, but you may lose the last few seconds of typing.</li>
+<li><b>Keep a backup.</b> Sticks wear out and get lost. Now and then, copy the <code>securewrity-data</code>
+folder somewhere else.</li>
+</ul>
+""", 2)
     sec("trouble", "When something goes wrong: logs", f"""
 <p>Securewrity keeps a short diary of what it does in <code>~/.local/share/securewrity/securewrity.log</code>:
 every start (with what launched it), every import and every error. It never contains your notes or passwords.
