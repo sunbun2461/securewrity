@@ -116,7 +116,7 @@ def _inline(text: str, style: dict) -> list[dict]:
         if g("code"):
             runs.append({"t": g("code_t").strip(" ") or g("code_t"), **style, "code": 1})
         elif g("img"):
-            runs.append({"t": "🖼 " + (g("img_alt") or "image"), **style, "link": g("img_url")})
+            runs.append({"t": "🖼 " + (g("img_alt") or "image"), **style, "link": g("img_url"), "img": 1})
         elif g("link"):
             runs += _inline(g("link_t"), {**style, "link": g("link_url")})
         elif g("bold"):

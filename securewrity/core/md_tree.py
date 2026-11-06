@@ -6,6 +6,8 @@ Layout rules (they match a Notion "Markdown & CSV" export, and plain folders of 
 * a folder next to a file with the same name holds that page's sub-pages
   (``Trip.md`` + ``Trip/Day 1.md`` → "Day 1" is a sub-page of "Trip");
 * a folder with no matching file becomes a page named after the folder;
+* an image on a line of its own (``![](Trip/photo.png)``) becomes an image block when the file
+  is inside what was imported (Notion puts them there); other images stay as links;
 * links between the imported files (``[Day 1](Trip/Day%201.md)``) become page links,
   and a line that is only a link to one of the page's own sub-pages becomes a sub-page block.
 
@@ -22,6 +24,9 @@ from urllib.parse import unquote
 from .markdown_import import parse_markdown
 
 MD_SUFFIXES = {".md", ".markdown"}
+IMAGE_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+              ".webp": "image/webp", ".bmp": "image/bmp"}
+MAX_IMAGE_BYTES = 30_000_000
 MAX_PAGES = 5000
 _NOTION_ID = re.compile(r"\s+[0-9a-f]{32}$", re.I)
 
@@ -41,8 +46,12 @@ def blocks_and_title(text: str, fallback: str) -> tuple[list[dict], str]:
 
 
 class _Importer:
-    def __init__(self, repo, dry_run: bool = False):
+    def __init__(self, repo, dry_run: bool = False, image_hook=None):
         self.repo = repo
+        # image_hook(bytes) -> (bytes, mime, width, height) or None: lets the app shrink / check images
+        self.image_hook = image_hook
+        self.roots: list[Path] = []   # images are only read from inside what was imported
+        self.images: dict[Path, str | None] = {}  # image file → stored file id (None = unusable)
         self.dry_run = dry_run  # count what would be made, touch nothing
         self.seen_dirs: set[Path] = set()
         self.by_path: dict[Path, str] = {}           # resolved .md path → page id
@@ -108,7 +117,46 @@ class _Importer:
         except OSError:
             return None
 
+    def _image_file(self, run: dict, base: Path) -> str | None:
+        """Store the image a Markdown image points at; its file id, or None if it can't be used."""
+        link = run.get("link") or ""
+        if not run.get("img") or re.match(r"^[a-z][a-z0-9+.-]*:", link, re.I):
+            return None  # web images aren't downloaded
+        try:
+            path = (base / unquote(link.split("#", 1)[0].split("?", 1)[0])).resolve()
+        except (OSError, ValueError):
+            return None
+        if path in self.images:
+            return self.images[path]
+        fid = None
+        mime = IMAGE_MIME.get(path.suffix.lower())
+        try:
+            if (mime and any(path.is_relative_to(r) for r in self.roots) and path.is_file()
+                    and path.stat().st_size <= MAX_IMAGE_BYTES):
+                data, w, h = path.read_bytes(), 0, 0
+                if self.image_hook is not None:
+                    res = self.image_hook(data)
+                    data, mime, w, h = res if res else (None, None, 0, 0)
+                if data:
+                    fid = self.repo.add_file(data, mime, w, h)
+        except OSError:
+            fid = None
+        self.images[path] = fid
+        return fid
+
     def _fix_links(self, blocks, base, page_id):
+        out = []
+        for b in blocks:
+            runs = [r for r in b["content"] if r["t"].strip()]
+            if b["type"] == "paragraph" and not b["children"] and runs and all(r.get("img") for r in runs):
+                fids = [self._image_file(r, base) for r in runs]
+                if all(fids):
+                    out += [{"type": "image", "content": [], "props": {"file_id": f}, "children": []} for f in fids]
+                    continue
+            for r in b["content"]:
+                r.pop("img", None)
+            out.append(b)
+        blocks[:] = out
         for i, b in enumerate(blocks):
             runs = [r for r in b["content"] if r["t"].strip()]
             if b["type"] in ("paragraph", "bullet") and not b["children"] and len(runs) == 1:
@@ -161,13 +209,14 @@ def count_pages(paths) -> int:
     return import_paths(None, paths, dry_run=True)[1]
 
 
-def import_paths(repo, paths, parent_id: str | None = None, dry_run: bool = False) -> tuple[list[str], int]:
+def import_paths(repo, paths, parent_id: str | None = None, dry_run: bool = False,
+                 image_hook=None) -> tuple[list[str], int]:
     """Import .md files, folders and .zip exports under `parent_id` (None = top level).
 
     Returns (ids of the new top pages, total pages created). One save at the end.
     Raises ValueError past MAX_PAGES so a wrong pick (like your home folder) can't run away.
     """
-    imp = _Importer(repo, dry_run)
+    imp = _Importer(repo, dry_run, image_hook)
     tops: list[str] = []
     with tempfile.TemporaryDirectory(prefix="securewrity-import-") as tmp:
         for i, raw in enumerate(paths):
@@ -176,10 +225,13 @@ def import_paths(repo, paths, parent_id: str | None = None, dry_run: bool = Fals
                 folder = Path(tmp) / str(i)
                 folder.mkdir()
                 _extract_zip(path, folder)
+                imp.roots.append(folder.resolve())
                 tops += _import_folder(imp, folder, path.stem, parent_id)
             elif path.is_dir():
+                imp.roots.append(path.resolve())
                 tops += _import_folder(imp, path, path.name, parent_id)
             elif path.is_file():
+                imp.roots.append(path.parent.resolve())
                 pid = imp.file(path, parent_id)
                 if pid:
                     tops.append(pid)

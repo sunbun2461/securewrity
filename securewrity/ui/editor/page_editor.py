@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from html import escape
 
 from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer, QUrl
@@ -183,7 +184,8 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # holds the keyboard while blocks are selected
         self._selected = set()
         self.setup_drag_drop(canvas)
-        canvas.installEventFilter(self)  # margin selection
+        canvas.installEventFilter(self)  # margin selection, images dropped in the margins
+        canvas.setAcceptDrops(True)
 
         # timers & popups ---------------------------------------------------
         self.save_timer = QTimer(self, singleShot=True, interval=600, timeout=self.save_now)
@@ -419,6 +421,8 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         if obj is getattr(self, "_canvas", None):
             if ev.type() in (ev.Type.MouseButtonPress, ev.Type.MouseMove, ev.Type.MouseButtonRelease):
                 return self.margin_mouse(ev)
+            if ev.type() in (ev.Type.DragEnter, ev.Type.DragMove, ev.Type.DragLeave, ev.Type.Drop):
+                return self.image_drop_event(ev, obj)
         if obj is self.title and ev.type() == ev.Type.KeyPress and ev.key() == K.Key_Down and self.blocks:
             self.focus_block(self.blocks[0], "start")
             return True
@@ -774,6 +778,56 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         nb = self.insert_block({"type": "paragraph"}, None, len(self.blocks))
         self.focus_block(nb, "start")
 
+    # --- images --------------------------------------------------------------------------
+    def insert_images(self, images, parent, index: int) -> list:
+        """Store images (bytes or QImage) and add an image block for each at parent/index."""
+        from .images import prepare_image
+        made = []
+        for src in images:
+            res = prepare_image(src)
+            if res is None:
+                continue
+            data, mime, w, h = res
+            fid = self.repo.add_file(data, mime, w, h)
+            made.append(self.insert_block({"type": "image", "props": {"file_id": fid}}, parent, index + len(made)))
+        if not made:
+            if images:
+                self.ctx.window.notify("That isn't an image Securewrity can open")
+            return []
+        # somewhere to keep typing below the last image
+        last = made[-1]
+        lst = self.siblings(last)
+        i = lst.index(last)
+        nxt = lst[i + 1] if i + 1 < len(lst) else None
+        if nxt is None or nxt.text is None:
+            nxt = self.insert_after(last, {"type": "paragraph"})
+        self.save_now()
+        self.focus_block(nxt, "start")
+        return made
+
+    def paste_images(self, bw, images) -> list:
+        """Put images where bw is: above it if it's an empty line (which stays, to type on), else after it."""
+        parent, idx = bw.parent_block, self.siblings(bw).index(bw)
+        empty = bw.text is not None and not bw.plain() and not bw.children and bw.type_key == "paragraph"
+        return self.insert_images(images, parent, idx if empty else idx + 1)
+
+    def pick_images(self, bw):
+        from .images import IMAGE_SUFFIXES, MAX_FILE_BYTES
+        from PyQt6.QtWidgets import QFileDialog
+        pattern = " ".join(f"*{s}" for s in sorted(IMAGE_SUFFIXES))
+        paths, _ = QFileDialog.getOpenFileNames(self, "Add images", str(Path.home()), f"Images ({pattern})")
+        datas = []
+        for p in paths:
+            try:
+                if Path(p).stat().st_size <= MAX_FILE_BYTES:
+                    datas.append(Path(p).read_bytes())
+            except OSError:
+                pass
+        if not datas:
+            self.focus_block(bw, "end")
+            return
+        self.paste_images(bw, datas)
+
     def handle_paste(self, bw, text: str, html: str = "", plain: bool = False):
         """Paste. Markdown (including what AIs call "Notion format") and copied web
         pages become real blocks; Ctrl+Shift+V (plain=True) pastes plain text."""
@@ -1053,6 +1107,16 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
                 self.focus_block(self.insert_after(bw, {"type": "paragraph"}), "start")
         elif key == K.Key_D and mods & CTRL:
             self.duplicate(bw)
+        elif key == K.Key_V and mods & CTRL:
+            from .images import images_from_mime
+            mime = QApplication.clipboard().mimeData()
+            images = images_from_mime(mime)
+            if images:
+                self.paste_images(bw, images)
+            else:
+                prev = bw
+                for data in self.blocks_from_mime(mime) or []:
+                    prev = self.insert_after(prev, data)
 
     def on_text_changed(self, bw):
         if self.slash.isVisible() and self.slash.bw is bw:
@@ -1085,6 +1149,9 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         if kind in ("c", "bg"):
             bw.set_prop("color" if kind == "c" else "bg", None if key == "default" else key)
             self.focus_block(bw, c.position())
+            return
+        if key == "image":
+            self.pick_images(bw)
             return
         empty = not bw.plain()
         props = None
@@ -1215,6 +1282,9 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
     def build_block_menu(self, bw, m: QMenu):
         if bw.type_key in ("page", "link_to_page") and bw.props.get("page_id"):
             m.addAction("Open page", lambda: self.ctx.window.open_page(bw.props["page_id"]))
+            m.addSeparator()
+        if bw.type_key == "image" and bw.body is not None:
+            bw.body.add_menu_actions(m)
             m.addSeparator()
         turn = m.addMenu("Turn into")
         for bt in registry.all():

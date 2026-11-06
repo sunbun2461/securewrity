@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QPoint, Qt, QTimer
 from PyQt6.QtGui import QColor, QCursor, QPainter, QPixmap
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QToolButton
 
 from .. import theme
@@ -109,7 +110,9 @@ class DragDropMixin:
         self._last_global = global_pos
         pos = self._canvas.mapFromGlobal(global_pos)
         self._ghost.move(pos + QPoint(12, 8))
-        target = self.drop_target(pos)
+        self._show_drop_line(self.drop_target(pos))
+
+    def _show_drop_line(self, target):
         if target is None:
             self._drop_line.hide()
             return
@@ -189,6 +192,30 @@ class DragDropMixin:
             p.drawText(r, Qt.AlignmentFlag.AlignCenter, label)
         p.end()
         return out
+
+    # --- images dragged in from other apps (file manager, browser) -------------------------
+    def image_drop_event(self, ev, widget) -> bool:
+        """Drag-enter / move / leave / drop of outside images over `widget`. True if handled."""
+        from .images import images_from_mime, might_have_images
+        t = ev.type()
+        if t == QEvent.Type.DragLeave:
+            self._drop_line.hide()
+            return False
+        if not might_have_images(ev.mimeData()):
+            return False
+        g = widget.mapToGlobal(ev.position().toPoint())
+        target = self.drop_target(self._canvas.mapFromGlobal(g))
+        if t in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+            ev.acceptProposedAction()
+            self._show_drop_line(target)
+            return True
+        if t == QEvent.Type.Drop:
+            self._drop_line.hide()
+            ev.acceptProposedAction()
+            parent, index = (target[0], target[1]) if target else (None, len(self.blocks))
+            self.insert_images(images_from_mime(ev.mimeData()), parent, index)
+            return True
+        return False
 
     # --- target finding ----------------------------------------------------------------
     def _row_rect(self, b):

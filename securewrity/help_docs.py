@@ -186,7 +186,21 @@ Notion gives you from <i>Settings → Export → Markdown &amp; CSV</i> (no need
 holds that page's sub-pages, and other folders become pages of their own. Links between the files turn into
 links to the new pages. To put the import inside an existing page, right-click it in the sidebar →
 <b>Import Markdown here…</b>.</p>
-<p>Not supported yet: images (they become links), real tables, columns and databases.</p>
+<p>Images that are inside the zip or folder come in as real images. Images on the web stay as links.
+Not supported yet: columns and databases.</p>
+""", 2)
+    sec("images", "Images", f"""
+<p>Three ways to add a picture:</p>
+<ul>
+<li><b>Paste it</b>: copy an image or take a screenshot, click where it should go and press {kbd('Ctrl', 'V')}.</li>
+<li><b>Drag it in</b> from your file manager (or from a web page). A blue line shows where it will land.</li>
+<li>Type <code>/image</code> and pick one or more files.</li>
+</ul>
+<p>Drag the right edge of a picture to make it smaller or bigger. Double-click it to see it full size.
+Right-click it to copy it, save it as a file, or go back to its normal size.</p>
+<p>Pictures are kept inside your notes file, so on a protected account they are encrypted too.
+Very large pictures are shrunk to 2000 pixels wide when added, to keep saving fast.
+Markdown export saves them as files in the page's folder.</p>
 """, 2)
     sec("lists", "Lists and to-dos", f"""
 <p>Press Enter at the end of a list item to start the next one. Press Enter on an empty item to stop the list.</p>

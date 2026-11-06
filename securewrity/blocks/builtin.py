@@ -343,10 +343,29 @@ class LinkToPage(PageBlock):
         return f"[↗ link](page:{block.get('props', {}).get('page_id', '')})"
 
 
+class ImageBlock(BlockType):
+    key, label, icon = "image", "Image", "🖼"
+    description = "Add a picture. You can also paste one or drag it in."
+    aliases = ("image", "picture", "photo", "img", "screenshot", "upload")
+    group = "Media"
+    has_text = False
+    can_have_children = False
+
+    def make_body(self, bw):
+        from ..ui.editor.images import ImageBody
+        return ImageBody(bw)
+
+    def refresh(self, bw):
+        bw.body.fit()
+
+    def to_markdown(self, text, block, depth, number=1):
+        return f"![image](securewrity-image:{block.get('props', {}).get('file_id', '')})"
+
+
 def register_builtin_blocks() -> None:
     levels = range(1, MAX_HEADING + 1)
     for bt in (Paragraph(), Toggle(),
                *(Heading(n) for n in levels), *(ToggleHeading(n) for n in levels),
                Bullet(), Numbered(), Todo(), Quote(), Callout(), Code(), Divider(),
-               PageBlock(), LinkToPage()):
+               PageBlock(), LinkToPage(), ImageBlock()):
         registry.register(bt)

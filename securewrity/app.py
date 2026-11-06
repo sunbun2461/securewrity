@@ -84,6 +84,12 @@ class Controller:
     def on_unlocked(self, account, store, first_run=False):
         from .ui.main_window import MainWindow
         repo = Repo(store)
+        try:
+            removed = repo.purge_unused_files()  # images whose blocks were deleted in an earlier session
+            if removed:
+                logging.getLogger("securewrity").info("removed %d unused image(s)", removed)
+        except Exception:
+            logging.getLogger("securewrity").exception("cleaning up unused images failed")
         if not repo.list_pages() and not repo.get_setting("welcome_done"):
             create_welcome_pages(repo, account)
             repo.set_setting("welcome_done", True)

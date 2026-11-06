@@ -257,6 +257,33 @@ class MarkdownImportTests(unittest.TestCase):
         self.assertEqual([c["content"][0]["t"] for c in t[1]["children"]], ["inside small"])
 
 
+class ImageImportTests(unittest.TestCase):
+    """Images inside an import become image blocks; ones outside it, or on the web, stay links."""
+
+    def test_images(self):
+        from securewrity.core.md_tree import import_paths
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, store = AccountManager(root / "data").create_account("img", [])
+            repo = Repo(store)
+            (root / "outside.png").write_bytes(b"\x89PNG secret")
+            notes = root / "notes"
+            (notes / "Trip").mkdir(parents=True)
+            (notes / "Trip" / "beach 1.png").write_bytes(b"\x89PNG fake")
+            (notes / "Trip.md").write_text("Hi\n\n![beach](Trip/beach%201.png)\n\n![o](../outside.png)\n\n"
+                                           "![web](https://example.com/a.png)\n")
+            tops, _ = import_paths(repo, [notes / "Trip.md"])
+            blocks = repo.get_blocks(tops[0])
+            self.assertEqual([b["type"] for b in blocks], ["paragraph", "image", "paragraph", "paragraph"])
+            f = repo.get_file(blocks[1]["props"]["file_id"])
+            self.assertEqual((f["mime"], f["data"]), ("image/png", b"\x89PNG fake"))
+            self.assertEqual(repo.db.execute("SELECT count(*) FROM files").fetchone()[0], 1)
+            # nothing uses it any more → removed at the next unlock
+            repo.save_blocks(tops[0], [])
+            self.assertEqual(repo.purge_unused_files(), 1)
+            store.close()
+
+
 class FolderImportTests(unittest.TestCase):
     """Folders and Notion export zips import as pages with sub-pages."""
 

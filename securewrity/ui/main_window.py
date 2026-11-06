@@ -396,7 +396,8 @@ class MainWindow(QMainWindow):
                 return None
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            tops, count = import_paths(self.ctx.repo, paths, parent_id)
+            from .editor.images import prepare_image
+            tops, count = import_paths(self.ctx.repo, paths, parent_id, image_hook=prepare_image)
         except (OSError, ValueError) as e:  # zipfile.BadZipFile is a ValueError
             log.exception("import failed")
             self.notify(f"Couldn't import: {e}")

@@ -34,18 +34,28 @@ def runs_to_md(runs, titles=None):
     return "".join(out)
 
 
-def blocks_to_md(blocks, depth=0, titles=None):
+EXT = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp"}
+
+
+def blocks_to_md(blocks, depth=0, titles=None, images=None):
+    """images: (folder name, list) — image blocks link to <folder>/<file>, and (file id, file name)
+    pairs are added to the list so the caller can write the files."""
     lines, number = [], 0
     for b in blocks:
         bt = registry.get(b["type"])
         number = number + 1 if b["type"] == "numbered" else 0
         text = runs_to_md(b.get("content"), titles)
         md = bt.to_markdown(text, b, depth, number)
+        fid = b.get("props", {}).get("file_id")
+        if b["type"] == "image" and fid and images is not None:
+            name = f"image-{fid}"
+            images[1].append((fid, name))
+            md = f"![image]({images[0].replace(' ', '%20')}/{name})"
         indent = "    " * depth
         lines.append("\n".join(indent + line for line in md.split("\n")))
         if b.get("children"):
             nest = b["type"] in ("bullet", "numbered", "todo", "toggle")
-            lines.append(blocks_to_md(b["children"], depth + 1 if nest else depth, titles))
+            lines.append(blocks_to_md(b["children"], depth + 1 if nest else depth, titles, images))
         if b["type"] == "toggle":
             lines.append(indent + "</details>")
     return "\n\n".join(l for l in lines if l is not None) if depth == 0 else "\n".join(lines)
@@ -58,9 +68,17 @@ def _safe(name):
 def export_tree(repo, page_id, folder: Path):
     p = repo.get_page(page_id)
     titles = {q["id"]: q["title"] for q in repo.list_pages()}
+    images = (_safe(p["title"]), [])
     body = (f"# {p['icon'] + ' ' if p['icon'] else ''}{p['title'] or 'Untitled'}\n\n"
-            + blocks_to_md(repo.get_blocks(page_id), titles=titles))
+            + blocks_to_md(repo.get_blocks(page_id), titles=titles, images=images))
     folder.mkdir(parents=True, exist_ok=True)
+    for fid, name in images[1]:  # images go in the page's folder, like Notion's export
+        f = repo.get_file(fid)
+        if f:
+            ext = EXT.get(f["mime"], "png")
+            body = body.replace(f"/{name})", f"/{name}.{ext})")
+            (folder / images[0]).mkdir(parents=True, exist_ok=True)
+            (folder / images[0] / f"{name}.{ext}").write_bytes(f["data"])
     (folder / f"{_safe(p['title'])}.md").write_text(body + "\n", encoding="utf-8")
     for k in repo.children(page_id):
         export_tree(repo, k["id"], folder / _safe(p["title"]))

@@ -17,7 +17,7 @@ import uuid
 
 from .storage import Store
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS = {
     1: """
@@ -48,6 +48,18 @@ MIGRATIONS = {
     );
     CREATE INDEX idx_blocks_page ON blocks(page_id);
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    """,
+    # images (and later other attachments) live inside the database, so protected
+    # accounts keep them encrypted together with the notes
+    2: """
+    CREATE TABLE files (
+        id TEXT PRIMARY KEY,
+        mime TEXT NOT NULL,
+        data BLOB NOT NULL,
+        width INTEGER NOT NULL DEFAULT 0,
+        height INTEGER NOT NULL DEFAULT 0,
+        created REAL NOT NULL
+    );
     """,
 }
 
@@ -192,6 +204,30 @@ class Repo:
             SELECT c.* FROM pages c LEFT JOIN pages p ON c.parent_id = p.id
             WHERE c.trashed=1 AND (p.id IS NULL OR p.trashed=0) ORDER BY c.updated DESC""")
         return [self._page(r) for r in rows]
+
+    # --- files (images) ------------------------------------------------------
+    def add_file(self, data: bytes, mime: str, width: int = 0, height: int = 0) -> str:
+        """Store a file and return its id. Not committed: the block that uses it is saved next."""
+        fid = new_id()
+        self.db.execute("INSERT INTO files(id, mime, data, width, height, created) VALUES (?,?,?,?,?,?)",
+                        (fid, mime, sqlite3.Binary(data), width, height, time.time()))
+        return fid
+
+    def get_file(self, file_id: str) -> dict | None:
+        r = self.db.execute("SELECT * FROM files WHERE id=?", (file_id,)).fetchone()
+        return {"id": r["id"], "mime": r["mime"], "data": bytes(r["data"]),
+                "width": r["width"], "height": r["height"]} if r else None
+
+    def purge_unused_files(self) -> int:
+        """Delete files no block refers to any more (pages in the Trash still count).
+        Run at unlock only, so undo within a session can always bring an image back."""
+        cur = self.db.execute("""
+            DELETE FROM files WHERE id NOT IN (
+                SELECT json_extract(props, '$.file_id') FROM blocks
+                WHERE json_extract(props, '$.file_id') IS NOT NULL)""")
+        if cur.rowcount:
+            self.commit()
+        return cur.rowcount
 
     # --- blocks ------------------------------------------------------------
     def get_blocks(self, page_id: str) -> list[dict]:

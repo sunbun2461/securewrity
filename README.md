@@ -10,6 +10,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Links**: sub-page blocks, “link to page” blocks, inline `[[` links, and a “Linked from” backlinks list
 - Headings, bullets, numbered lists, to-dos, quotes, callouts, code, dividers
 - **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); sidebar → 📥 Import brings in `.md` files, folders and Notion export `.zip`s with their sub-pages and links
+- **Images**: paste a screenshot, drag picture files in, or `/image`; resize by dragging the edge. Stored inside the (encrypted) notes file
 - `/` slash menu, Markdown shortcuts (`# `, `- `, `[] `, `#> ` …), search (Ctrl+P), dark and light themes
 - **Accounts**: a Guest account (no password) plus any number of user accounts
 - **Encryption**, optional and available at any time: password, passphrase (can be generated) or a
@@ -88,6 +89,5 @@ tools/        help_screenshots.py regenerates the Help pictures (securewrity/dat
 ## Known limitations (v0.1)
 
 - No selecting text across several blocks at once (each block is its own editor)
-- Blocks are reordered with Ctrl+Shift+↑/↓ or the ⋮⋮ menu, not by dragging (pages in the sidebar *can* be dragged)
 - Undo (Ctrl+Z) works inside a block, not for block-level operations like delete
 - No images or attachments yet (a good first plugin or block type)

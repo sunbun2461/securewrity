@@ -60,10 +60,19 @@ class BlockTextEdit(QTextEdit):
             super().keyPressEvent(e)
             self.bw.editor.after_key(self.bw, e)
 
+    def canInsertFromMimeData(self, source):
+        from .images import might_have_images
+        return might_have_images(source) or super().canInsertFromMimeData(source)
+
     def insertFromMimeData(self, source):
         blocks = self.bw.editor.blocks_from_mime(source)
         if blocks:  # blocks copied inside Securewrity paste back exactly
             self.bw.editor.insert_parsed(self.bw, blocks)
+            return
+        from .images import images_from_mime
+        images = images_from_mime(source)
+        if images:  # a copied picture / screenshot, or copied image files
+            self.bw.editor.paste_images(self.bw, images)
             return
         html = source.html() if source.hasHtml() else ""
         self.bw.editor.handle_paste(self.bw, source.text(), html, plain=getattr(self, "_paste_plain", False))
@@ -73,6 +82,23 @@ class BlockTextEdit(QTextEdit):
     _sel_press = None
     _ranging = False
     _left_down = False
+
+    # images dragged in from other apps go in as image blocks (text drags work as usual)
+    def dragEnterEvent(self, e):
+        if not self.bw.editor.image_drop_event(e, self.viewport()):
+            super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        if not self.bw.editor.image_drop_event(e, self.viewport()):
+            super().dragMoveEvent(e)
+
+    def dragLeaveEvent(self, e):
+        self.bw.editor.image_drop_event(e, self.viewport())
+        super().dragLeaveEvent(e)
+
+    def dropEvent(self, e):
+        if not self.bw.editor.image_drop_event(e, self.viewport()):
+            super().dropEvent(e)
 
     def mousePressEvent(self, e):
         ed = self.bw.editor
