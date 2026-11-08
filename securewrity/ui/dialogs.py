@@ -19,17 +19,19 @@ def _ago(ts: float) -> str:
 
 class PageSearchDialog(QDialog):
     """mode='switch' -> quick switcher (Ctrl+P); 'pick' -> choose a page;
-    'link' -> choose a page or enter a URL, or create a new page."""
+    'link' -> choose a page or enter a URL, or create a new page; 'move' -> where to move blocks."""
 
     def __init__(self, ctx, parent=None, mode="switch", initial=""):
         super().__init__(parent)
         self.ctx, self.mode, self.result_value = ctx, mode, None
-        self.setWindowTitle({"switch": "Search", "pick": "Choose a page", "link": "Link to…"}[mode])
+        self.setWindowTitle({"switch": "Search", "pick": "Choose a page", "link": "Link to…",
+                            "move": "Move blocks to…"}[mode])
         self.resize(560, 440)
         lay = QVBoxLayout(self)
         self.q = QLineEdit(initial)
         self.q.setPlaceholderText({"switch": "Search pages and content…",
                                    "pick": "Search for a page…",
+                                   "move": "Search for the page to move them to…",
                                    "link": "Search pages, or paste a URL…"}[mode])
         self.q.textChanged.connect(self.refresh)
         self.q.installEventFilter(self)
@@ -79,11 +81,14 @@ class PageSearchDialog(QDialog):
                 if r["snippet"]:
                     line += f"\n        …{r['snippet']}…"
                 self._add(line, ("page", p["id"]))
-            if self.mode in ("link", "pick"):
+            if self.mode in ("link", "pick", "move"):
                 self._add(f"＋  New page “{q}” (inside current page)", ("new", q))
         else:
             pages = sorted(repo.list_pages(), key=lambda p: -p["updated"])[:30]
+            here = self.ctx.window.editor.page_id if self.mode == "move" else None
             for p in pages:
+                if p["id"] == here:
+                    continue
                 self._add(f"{p['icon'] or '📄'}  {p['title'] or 'Untitled'}      · {_ago(p['updated'])}",
                           ("page", p["id"]))
         if self.list.count():

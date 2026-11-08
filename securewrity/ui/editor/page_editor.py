@@ -1319,6 +1319,9 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
                                                               None if n == "default" else n))
         m.addSeparator()
         m.addAction("Duplicate\tCtrl+D", lambda: self.duplicate(bw))
+        n = len(self.selected_blocks()) if self.is_in_selection(bw) else 1
+        m.addAction("↪  Move to page…" if n == 1 else f"↪  Move {n} blocks to page…",
+                    lambda: self.move_to_page(bw))
         m.addAction("Move up\tCtrl+Shift+↑", lambda: self.move_up_down(bw, -1))
         m.addAction("Move down\tCtrl+Shift+↓", lambda: self.move_up_down(bw, 1))
         m.addAction("Indent\tTab", lambda: self.indent(bw))
@@ -1328,6 +1331,48 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         m.addAction("Select\tEsc", lambda: self.select_blocks([bw]))
         m.addSeparator()
         m.addAction("Delete", lambda: self.delete_block(bw))
+
+    def move_to_page(self, bw, target: str | None = None):
+        """Move a block (or the selection it is part of), with everything nested in it, to the
+        end of another page. Sub-page blocks take their pages along."""
+        blocks = self.selected_blocks() if self.is_in_selection(bw) else [bw]
+        if not blocks or not self.page_id:
+            return
+        self.save_now()
+        if target is None:
+            from ..dialogs import PageSearchDialog
+            target = PageSearchDialog.choose(self.ctx, self, mode="move")
+        if not target:
+            return
+        if target == self.page_id:
+            self.ctx.window.notify("They're already on this page.")
+            return
+        sub_pages = []
+        stack = list(blocks)
+        while stack:
+            b = stack.pop()
+            stack.extend(b.children)
+            if b.type_key == "page" and b.props.get("page_id"):
+                sub_pages.append(b.props["page_id"])
+        repo = self.repo
+        if any(target == pid or target in repo.descendants(pid) for pid in sub_pages):
+            self.ctx.window.notify("Can't move a page block inside that page itself.")
+            return
+        repo.append_blocks(target, [_fresh_ids(b.to_data()) for b in blocks], commit=False)
+        for pid in sub_pages:
+            repo.move_page(pid, target, 1e9)
+        self.clear_selection()
+        for b in blocks:
+            self.delete_block(b, trash_pages=False, focus=False)
+        self.save_now()  # commits both pages together
+        if sub_pages:
+            self.ctx.events.emit("pages_changed")
+        p = repo.get_page(target) or {}
+        n = len(blocks)
+        self.ctx.window.notify(f"Moved {n} block{'s' if n != 1 else ''} to "
+                               f"{p.get('icon') or '📄'} {p.get('title') or 'Untitled'}")
+        if self.current is None and self.blocks:
+            self.focus_block(self.blocks[0], "end")
 
     def show_block_menu(self, bw):
         m = QMenu(self)

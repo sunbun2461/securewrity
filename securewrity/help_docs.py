@@ -291,7 +291,11 @@ Sub-pages go with their parent.</p>
     # ---------------------------------------------------------------- blocks
     sec("blocks", "Moving and changing blocks", f"""
 <p>Hover over a block and a ⋮⋮ handle appears on its left. Click it for: <b>Turn into</b> another type, <b>Color</b>,
-Duplicate, Move up / down, Indent / Outdent, Select and Delete. Right-clicking text shows the same options.</p>
+Duplicate, <b>Move to page…</b>, Move up / down, Indent / Outdent, Select and Delete. Right-clicking text shows the same options.</p>
+<p><b>Move to page…</b> sends the block, with everything nested inside it, to the end of another page
+(pick it from the list or search for it). If several blocks are selected, they all go. A sub-page
+block takes its page along. Moving is saved straight away; Undo on this page brings the blocks
+back here but doesn't remove them from the other page.</p>
 {table([
     [kbd('Ctrl', 'Shift', '↑') + " / " + kbd('↓'), "Move the block up / down"],
     [kbd('Tab') + " / " + kbd('Shift', 'Tab'), "Indent / outdent"],

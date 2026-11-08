@@ -296,6 +296,10 @@ class Repo:
         if commit:
             self.commit()
 
+    def append_blocks(self, page_id: str, tree: list[dict], commit: bool = True) -> None:
+        """Add blocks (new ids) to the end of a page, leaving its other blocks as they are."""
+        self.save_blocks(page_id, self.get_blocks(page_id) + tree, commit=commit)
+
     # --- search & links ----------------------------------------------------
     def search(self, query: str, limit: int = 50) -> list[dict]:
         """Return pages matching by title or content: [{page, snippet}]"""
