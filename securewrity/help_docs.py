@@ -134,6 +134,11 @@ a passphrase or a seed phrase. See <a href='#protect'>Protecting an account</a>.
        "Press Enter on an open toggle and the new line goes inside it.")}
 <p><b>Put things inside:</b> press {kbd('Tab')} on the line under a toggle to move it in, {kbd('Shift', 'Tab')} to move it back out.</p>
 <p><b>Open or close from the keyboard:</b> {kbd('Ctrl', 'Enter')}.</p>
+<p><b>A closed toggle is one piece.</b> Moving it (drag, {kbd('Ctrl', 'Shift', '↑')}/{kbd('↓')}, Move to page…, cut and paste)
+always takes everything inside along. Deleting it deletes everything inside too: with the title empty,
+{kbd('Backspace')} removes it straight away; with a title, the first {kbd('Backspace')} (or {kbd('Delete')} from the line above)
+highlights the toggle and the second deletes it. {kbd('Ctrl', 'Z')} brings it all back. An <i>open</i> toggle works like
+before: {kbd('Backspace')} at its start turns it into plain text and keeps what's inside.</p>
 {tip("An empty open toggle shows a grey 'Empty toggle' hint. Click it to start typing inside.")}
 """, 2)
     sec("markdown", "Typing shortcuts", f"""

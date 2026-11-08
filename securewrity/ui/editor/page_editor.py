@@ -712,7 +712,30 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.delete_block(bw, focus=False)
         self.focus_block(prev, join)
 
+    def _remove_closed_toggle(self, bw, key: str) -> bool:
+        """A closed toggle is one thing: Backspace/Delete removes it with everything hidden inside,
+        never spills its contents onto the page. Empty title → gone at once; otherwise it gets
+        selected first so the next press deletes it (no surprise loss of a titled toggle)."""
+        if not (bw.is_collapsed() and bw.children):
+            return False
+        if not bw.plain():
+            self.delete_block(bw)
+        else:
+            self.select_blocks([bw])
+            n = sum(1 for _ in self._walk(bw.children))
+            self.ctx.window.notify(f"Press {key} again to delete this toggle and the "
+                                   f"{n} block{'s' if n != 1 else ''} inside it")
+        return True
+
+    @staticmethod
+    def _walk(blocks):
+        for b in blocks:
+            yield b
+            yield from PageEditor._walk(b.children)
+
     def backspace_at_start(self, bw):
+        if self._remove_closed_toggle(bw, "Backspace"):
+            return
         if bw.type_key != "paragraph":
             return self.turn_into(bw, "paragraph", cursor=0)
         if bw.parent_block:
@@ -727,6 +750,13 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             if nxt.type_key == "divider":
                 self.delete_block(nxt, focus=False)
                 self.focus_block(bw, "end")
+            return
+        if nxt.is_collapsed() and nxt.children:
+            if not nxt.plain():
+                self.delete_block(nxt, focus=False)
+                self.focus_block(bw, "end")
+            else:
+                self._remove_closed_toggle(nxt, "Delete")
             return
         self.merge_into_prev(nxt)
 
