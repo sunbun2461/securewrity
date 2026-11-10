@@ -6,8 +6,8 @@ import re
 from pathlib import Path
 from html import escape
 
-from PyQt6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QTextCharFormat
+from PyQt6.QtCore import QEasingCurve, QPoint, QPointF, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu,
                              QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
                              QWidget)
@@ -21,7 +21,7 @@ from .dragdrop import DragDropMixin
 from .history import HistoryMixin, arrow_icon
 from .selection import SelectionMixin
 from .richtext import html_to_markdown
-from .popups import EmojiPicker, InlineToolbar, SlashMenu, add_color_actions
+from .popups import EmojiPicker, InlineToolbar, MentionMenu, SlashMenu, add_color_actions
 
 K = Qt.Key
 CTRL = Qt.KeyboardModifier.ControlModifier
@@ -191,6 +191,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.save_timer = QTimer(self, singleShot=True, interval=600, timeout=self.save_now)
         self.title_timer = QTimer(self, singleShot=True, interval=500, timeout=self._save_title)
         self.slash = SlashMenu(self)
+        self.mention = MentionMenu(self)
         self.toolbar = InlineToolbar(self, self)
         self.history_reset()
 
@@ -206,7 +207,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
 
     def load(self, page_id: str):
         self.save_now()
-        self.slash.close_menu()
+        self.close_menus()
         self.toolbar.hide()
         self._loading = True
         self._clear_widgets()
@@ -238,7 +239,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
 
     def _rebuild(self, tree: list[dict]):
         """Replace the page's blocks with `tree` (used by undo / redo)."""
-        self.slash.close_menu()
+        self.close_menus()
         self.toolbar.hide()
         self._loading = True
         self._clear_widgets()
@@ -954,16 +955,36 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
                 return True
             return False
 
-        if self.slash.isVisible() and self.slash.bw is bw:
+        menu = next((mm for mm in (self.slash, self.mention) if mm.isVisible() and mm.bw is bw), None)
+        if menu is not None:
             if key in (K.Key_Up, K.Key_Down):
-                self.slash.move_sel(-1 if key == K.Key_Up else 1)
+                menu.move_sel(-1 if key == K.Key_Up else 1)
                 return True
             if key in (K.Key_Return, K.Key_Enter, K.Key_Tab):
-                self.slash.activate()
+                if menu is self.mention and not menu.has_choice():
+                    menu.close_menu()  # nothing to pick: Enter does what it normally does
+                else:
+                    menu.activate()
+                    return True
+            elif key == K.Key_Escape:
+                menu.close_menu()
                 return True
-            if key == K.Key_Escape:
-                self.slash.close_menu()
+        if not has_sel and key in (K.Key_Backspace, K.Key_Delete) and not ctrl:
+            span = richtext.date_span(te.document(), pos - 1 if key == K.Key_Backspace else pos)
+            if span:  # a date mention goes in one piece
+                c = te.textCursor()
+                c.setPosition(span[0])
+                c.setPosition(span[1], c.MoveMode.KeepAnchor)
+                c.removeSelectedText()
+                te.setTextCursor(c)
                 return True
+        if e.text() and e.text().isprintable() and te.currentCharFormat().property(richtext.P_DATE):
+            # typing next to a date mention is ordinary text, not part of the date
+            f = te.currentCharFormat()
+            f.clearProperty(richtext.P_DATE)
+            f.clearForeground()
+            f.setToolTip("")
+            te.setCurrentCharFormat(f)
         if key == K.Key_Escape:
             self.select_blocks([bw])
             return True
@@ -1083,6 +1104,8 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         pos = bw.cursor_pos()
         if ch == "/" and bw.type_key != "code":
             self.slash.open_for(bw, pos)
+        elif ch == "@" and bw.btype.rich and (pos == 1 or text[pos - 2] in " \t\n([{\"'"):
+            self.mention.open_for(bw, pos)
         elif ch == "[" and text[max(0, pos - 2):pos] == "[[" and bw.btype.rich:
             c = bw.text.textCursor()
             c.setPosition(pos - 2)
@@ -1161,8 +1184,9 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
                     prev = self.insert_after(prev, data)
 
     def on_text_changed(self, bw):
-        if self.slash.isVisible() and self.slash.bw is bw:
-            self.slash.on_text_changed()
+        for menu in (self.slash, self.mention):
+            if menu.isVisible() and menu.bw is bw:
+                menu.on_text_changed()
 
     def on_block_blur(self, bw):
         QTimer.singleShot(150, self._check_blur)
@@ -1174,11 +1198,98 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         cur_text = self.current.text if self.current else None
         if fw is not cur_text:
             self.toolbar.hide()
-            self.slash.close_menu()
+            self.close_menus()
 
     # =====================================================================
     # slash menu
     # =====================================================================
+    def close_menus(self):
+        self.slash.close_menu()
+        if hasattr(self, "mention"):
+            self.mention.close_menu()
+
+    # --- @ mentions: dates and pages -------------------------------------------------------
+    def apply_mention(self, bw, entry: dict, at_pos: int):
+        """Replace "@query" with a date mention or a link to a page, plus a space to keep typing."""
+        te = bw.text
+        c = te.textCursor()
+        end = c.position()
+        c.setPosition(max(0, at_pos - 1))
+        c.setPosition(max(end, at_pos - 1), c.MoveMode.KeepAnchor)
+        c.removeSelectedText()
+        if entry["kind"] == "date":
+            c.insertText(richtext.date_text(entry["key"]), richtext.make_format({"date": entry["key"]}))
+        else:
+            c.insertText(entry["label"], richtext.make_format({"link": f"page:{entry['key']}"}))
+        c.insertText(" ", QTextCharFormat())
+        te.setTextCursor(c)
+        te.setCurrentCharFormat(QTextCharFormat())
+        te.setFocus()
+        self.changed()
+        if entry["kind"] == "page":
+            self.save_now()
+            self.refresh_backlinks()
+
+    def date_at(self, bw, viewport_pos) -> tuple[int, int, str] | None:
+        """The date mention under a point in a block's text, if any."""
+        te = bw.text
+        hit = te.document().documentLayout().hitTest(QPointF(viewport_pos), Qt.HitTestAccuracy.ExactHit)
+        if hit < 0:
+            return None
+        for p in (hit, hit - 1):
+            span = richtext.date_span(te.document(), p)
+            if span:
+                c = QTextCursor(te.document())
+                c.setPosition(span[0])
+                r0 = te.cursorRect(c)
+                c.setPosition(span[1])
+                r1 = te.cursorRect(c)
+                if r0.top() == r1.top() and not (r0.left() <= viewport_pos.x() <= r1.left()):
+                    continue
+                return span
+        return None
+
+    def edit_date(self, bw, span):
+        """Calendar popup for a clicked date mention: pick a new day, or turn it back into text."""
+        from datetime import date as _date
+        from PyQt6.QtCore import QDate
+        from PyQt6.QtWidgets import QCalendarWidget, QWidgetAction
+        start, end, iso = span
+        te = bw.text
+        m = QMenu(self)
+        cal = QCalendarWidget()
+        cal.setGridVisible(False)
+        cal.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        try:
+            d = _date.fromisoformat(iso)
+            cal.setSelectedDate(QDate(d.year, d.month, d.day))
+        except ValueError:
+            pass
+        act = QWidgetAction(m)
+        act.setDefaultWidget(cal)
+        m.addAction(act)
+
+        def replace(new_iso):
+            m.close()
+            c = QTextCursor(te.document())
+            c.setPosition(start)
+            c.setPosition(end, c.MoveMode.KeepAnchor)
+            if new_iso:
+                c.insertText(richtext.date_text(new_iso), richtext.make_format({"date": new_iso}))
+            else:
+                c.insertText(c.selectedText(), QTextCharFormat())
+            te.setTextCursor(c)
+            te.setCurrentCharFormat(QTextCharFormat())
+            self.changed()
+        cal.clicked.connect(lambda qd: replace(_date(qd.year(), qd.month(), qd.day()).isoformat()))
+        cal.activated.connect(lambda qd: replace(_date(qd.year(), qd.month(), qd.day()).isoformat()))
+        m.addSeparator()
+        m.addAction("📅  Today", lambda: replace(_date.today().isoformat()))
+        m.addAction("Turn into plain text", lambda: replace(None))
+        c = QTextCursor(te.document())
+        c.setPosition(start)
+        m.exec(te.viewport().mapToGlobal(te.cursorRect(c).bottomLeft()))
+
     def apply_slash(self, bw, entry: dict, slash_pos: int):
         # remove "/query"
         c = bw.text.textCursor()

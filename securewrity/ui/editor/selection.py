@@ -66,7 +66,7 @@ class SelectionMixin:
                 b.text.setTextCursor(c)
         if blocks:
             self.toolbar.hide()
-            self.slash.close_menu()
+            self.close_menus()
             self.setFocus(Qt.FocusReason.OtherFocusReason)
             n = len(self.selected_blocks())
             self.set_status("selection", f"{n} block{'s' if n != 1 else ''} selected: drag to move, "

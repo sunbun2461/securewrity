@@ -105,6 +105,7 @@ class SlashMenu(QFrame):
         self.bw = None
         self.slash_pos = 0
         self.misses = 0
+        self.trigger = "/"
         lay = QVBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         self.list = QListWidget()
@@ -195,13 +196,15 @@ class SlashMenu(QFrame):
             return
         text = self.bw.plain()
         pos = self.bw.cursor_pos()
-        if pos < self.slash_pos or self.slash_pos < 1 or text[self.slash_pos - 1: self.slash_pos] != "/":
+        if pos < self.slash_pos or self.slash_pos < 1 or text[self.slash_pos - 1: self.slash_pos] != self.trigger:
             return self.close_menu()
         query = text[self.slash_pos:pos]
         if len(query) > 30 or "\n" in query:
             return self.close_menu()
-        if not self.refilter(query) and self.misses > 3:
+        if not self.refilter(query) and self.misses > self.max_misses:
             self.close_menu()
+
+    max_misses = 3
 
     def move_sel(self, delta: int):
         n = self.list.count()
@@ -218,6 +221,105 @@ class SlashMenu(QFrame):
     def close_menu(self):
         self.hide()
         self.bw = None
+
+
+# --- @ menu: dates and pages ------------------------------------------------------------
+
+
+class MentionMenu(SlashMenu):
+    """Shown after typing '@' (Notion's mention): a date (today, tomorrow, "next friday",
+    "nov 12", 11/12 …) or a link to a page. Enter picks the highlighted entry."""
+
+    max_misses = 6
+
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.trigger = "@"
+        self.setFixedSize(380, 300)
+
+    def refilter(self, query: str):
+        from datetime import date, timedelta
+        from ...core.dates import label, parse_date, relative_hint
+        q = query.strip().lower()
+        today = date.today()
+        entries, seen = [], set()
+
+        def add_date(d, title=None):
+            if d in seen:
+                return
+            seen.add(d)
+            entries.append({"kind": "date", "key": d.isoformat(),
+                            "label": title or label(d),
+                            "desc": label(d) if title else relative_hint(d, today), "icon": "📅"})
+        for word, d in (("today", today), ("tomorrow", today + timedelta(days=1)),
+                        ("yesterday", today - timedelta(days=1))):
+            if not q or word.startswith(q):
+                add_date(d, word.capitalize())
+        parsed = parse_date(q, today) if q else None
+        if parsed:
+            add_date(parsed)
+        repo = self.editor.ctx.repo
+        here = self.editor.page_id
+        if q:
+            pages = [p for p in repo.list_pages() if q in (p["title"] or "").lower()]
+            pages.sort(key=lambda p: (not (p["title"] or "").lower().startswith(q), -p["updated"]))
+        else:
+            pages = sorted(repo.list_pages(), key=lambda p: -p["updated"])
+        for p in [p for p in pages if p["id"] != here][:6]:
+            entries.append({"kind": "page", "key": p["id"], "label": p["title"] or "Untitled",
+                            "desc": "Link to page", "icon": p["icon"] or "📄"})
+        self.list.clear()
+        shown_pages = False
+        if not q:
+            self._header("Date")
+        for e in entries:
+            if not q and e["kind"] == "page" and not shown_pages:
+                self._header("Pages")
+            shown_pages = shown_pages or e["kind"] == "page"
+            it = QListWidgetItem(f"{e['icon']}  {e['label']}\n      {e['desc']}")
+            it.setData(Qt.ItemDataRole.UserRole, e)
+            self.list.addItem(it)
+        for i in range(self.list.count()):
+            if self.list.item(i).data(Qt.ItemDataRole.UserRole) is not None:
+                self.list.setCurrentRow(i)
+                self.misses = 0
+                return True
+        self.misses += 1
+        return False
+
+    def _header(self, text):
+        it = QListWidgetItem(text)
+        it.setFlags(Qt.ItemFlag.NoItemFlags)
+        f = it.font()
+        f.setBold(True)
+        f.setPointSizeF(max(7.0, f.pointSizeF() - 1))
+        it.setFont(f)
+        it.setForeground(QColor(theme.t("muted")))
+        self.list.addItem(it)
+
+    def move_sel(self, delta: int):
+        n = self.list.count()
+        if not n:
+            return
+        row = self.list.currentRow()
+        for _ in range(n):
+            row = (row + delta) % n
+            if self.list.item(row).data(Qt.ItemDataRole.UserRole) is not None:
+                self.list.setCurrentRow(row)
+                return
+
+    def has_choice(self) -> bool:
+        it = self.list.currentItem()
+        return it is not None and it.data(Qt.ItemDataRole.UserRole) is not None
+
+    def activate(self):
+        it = self.list.currentItem()
+        if it is None or it.data(Qt.ItemDataRole.UserRole) is None:
+            return
+        bw, start = self.bw, self.slash_pos
+        self.close_menu()
+        if bw:
+            self.editor.apply_mention(bw, it.data(Qt.ItemDataRole.UserRole), start)
 
 
 # --- inline formatting toolbar ----------------------------------------------------------

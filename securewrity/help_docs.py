@@ -280,6 +280,24 @@ to add one inside the open page, or type <code>/page</code> inside a page.</li>
 <p>To add a whole block that links to a page, type <code>/link</code> and pick <b>Link to page</b>.</p>
 <p>At the bottom of every page, <b>Linked from</b> lists the pages that link to it.</p>
 """, 2)
+    sec("mentions", "@ dates and mentions", f"""
+<p>Type {kbd('@')} anywhere in your text to drop in a date, or a link to a page, like Notion's @ mentions.</p>
+{steps(f"Type {kbd('@')}. A small menu shows <b>Today</b>, <b>Tomorrow</b>, <b>Yesterday</b> and your recent pages.",
+       "Keep typing to say which day, for example <code>@next friday</code> or <code>@dec 25</code>, or part of a page name.",
+       f"Press {kbd('Enter')} (or click) to put it in. {kbd('Esc')} leaves what you typed as plain text.")}
+{table([
+    ["<code>@today</code> <code>@tomorrow</code> <code>@yesterday</code>", "Those days"],
+    ["<code>@friday</code> <code>@fri</code>", "The coming Friday (today, if it's Friday)"],
+    ["<code>@next friday</code> <code>@last monday</code>", "Friday of next week · Monday of last week"],
+    ["<code>@in 3 days</code> <code>@2 weeks ago</code> <code>@next month</code>", "Counting from today"],
+    ["<code>@nov 12</code> <code>@12 november 2027</code> <code>@November 12, 2026</code>", "A day by name"],
+    ["<code>@11/12</code> <code>@11/12/2026</code> <code>@2026-11-12</code>", "A day by number (month first)"],
+], ["Type", "You get"])}
+<p>The date shows in grey, like <span style="color:gray">@November 12, 2026</span>, and stays one piece:
+{kbd('Backspace')} removes the whole date. <b>Click a date</b> to pick another day on a calendar, jump to Today,
+or turn it into plain text.</p>
+<p>The @ menu only opens at the start of a word, so typing an email address like <code>me@example.com</code> doesn't open it.</p>
+""", 2)
     sec("fullwidth", "Full width pages", f"""
 <p>Normally the text sits in a centered column, easy to read on a wide screen. For tables, long lists or side-by-side
 work, click <b>⋯</b> at the top right of the page → <b>Full width</b> and the page uses the whole window.
@@ -407,6 +425,7 @@ reopen the last page. {kbd('Ctrl', 'Shift', 'L')} flips between dark and light.<
         [kbd('Ctrl', 'Shift', 'J'), "Today's journal page (Daily journal plugin)"],
         [kbd('/'), "Block menu"],
         [kbd('[') + kbd('[') + " or " + kbd('Ctrl', 'K'), "Link"],
+        [kbd('@'), "Date (@today, @next friday, @nov 12) or a link to a page"],
         [kbd('Ctrl', 'Enter'), "Open / close a toggle, tick a to-do"],
         [kbd('Ctrl', 'Z') + " / " + kbd('Ctrl', 'Shift', 'Z'), "Undo / redo"],
         [kbd('Ctrl', 'A') + " twice", "Select every block on the page"],

@@ -383,3 +383,21 @@ class FolderImportTests(unittest.TestCase):
         self.assertEqual((wrapper["title"], wrapper["parent_id"]), ("Notes", parent))
         kids = [p["title"] for p in self.repo.list_pages() if p["parent_id"] == wrapper["id"]]
         self.assertEqual(kids, ["a", "b"])
+
+
+class DateMentionTests(unittest.TestCase):
+    def test_parse(self):
+        from datetime import date
+        from securewrity.core.dates import label, parse_date
+        t = date(2026, 11, 10)  # a Tuesday
+        cases = {"today": "2026-11-10", "Tomorrow": "2026-11-11", "yesterday": "2026-11-09",
+                 "friday": "2026-11-13", "fri": "2026-11-13", "next friday": "2026-11-20",
+                 "next monday": "2026-11-16", "last friday": "2026-11-06", "in 3 days": "2026-11-13",
+                 "2 weeks ago": "2026-10-27", "next month": "2026-12-10", "nov 12": "2026-11-12",
+                 "November 12, 2026": "2026-11-12", "12th of november": "2026-11-12",
+                 "2027-01-05": "2027-01-05", "1/5/27": "2027-01-05", "11/12": "2026-11-12"}
+        for text, want in cases.items():
+            self.assertEqual(str(parse_date(text, t)), want, text)
+        for text in ("", "blah", "feb 30", "13/45"):
+            self.assertIsNone(parse_date(text, t), text)
+        self.assertEqual(label(date(2026, 3, 4)), "March 4, 2026")

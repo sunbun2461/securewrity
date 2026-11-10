@@ -8,6 +8,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Pages inside pages**, any depth, with a draggable **sidebar** tree, favorites and trash
 - **Drag blocks** by their ⋮⋮ handle, including into toggles; **select blocks** (Ctrl+A twice = whole page) to delete, copy or move them together; page-wide **undo / redo** (Ctrl+Z / Ctrl+Shift+Z or the arrows)
 - **Links**: sub-page blocks, “link to page” blocks, inline `[[` links, and a “Linked from” backlinks list
+- **@ mentions**: `@today`, `@next friday`, `@nov 12` drop in a date (click it for a calendar); `@` + a page name links that page
 - Headings, bullets, numbered lists, to-dos, quotes, callouts, code, dividers
 - **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); sidebar → 📥 Import brings in `.md` files, folders and Notion export `.zip`s with their sub-pages and links
 - **Images**: paste a screenshot, drag picture files in, or `/image`; resize by dragging the edge. Stored inside the (encrypted) notes file

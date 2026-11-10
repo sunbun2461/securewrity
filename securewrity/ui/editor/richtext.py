@@ -6,9 +6,19 @@ from PyQt6.QtGui import QBrush, QColor, QTextCharFormat, QTextCursor, QTextForma
 from .. import theme
 
 _UP = int(QTextFormat.Property.UserProperty.value)
-P_COLOR, P_BG, P_CODE = _UP + 1, _UP + 2, _UP + 3
+P_COLOR, P_BG, P_CODE, P_DATE = _UP + 1, _UP + 2, _UP + 3, _UP + 4
 MONO = "Monospace"
-ATTRS = ("b", "i", "u", "s", "code", "c", "bg", "link")
+ATTRS = ("b", "i", "u", "s", "code", "c", "bg", "link", "date")
+
+
+def date_text(iso: str) -> str:
+    """What a date mention reads as: '@November 12, 2026'."""
+    from datetime import date
+    from ...core.dates import label
+    try:
+        return "@" + label(date.fromisoformat(iso))
+    except ValueError:
+        return ""
 
 
 def make_format(run: dict) -> QTextCharFormat:
@@ -45,6 +55,11 @@ def make_format(run: dict) -> QTextCharFormat:
     if run.get("link"):
         f.setAnchor(True)
         f.setAnchorHref(run["link"])
+    if run.get("date"):
+        f.setProperty(P_DATE, run["date"])
+        if not run.get("c"):
+            f.setForeground(QBrush(QColor(theme.t("muted"))))
+        f.setToolTip("Click to change the date")
     return f
 
 
@@ -116,6 +131,9 @@ def run_from_format(text: str, f: QTextCharFormat) -> dict:
     bg = f.property(P_BG)
     if bg:
         r["bg"] = bg
+    d = f.property(P_DATE)
+    if d:
+        r["date"] = d
     return r
 
 
@@ -150,8 +168,27 @@ def runs_from_document(doc) -> list[dict]:
                 runs.append(run_from_format(frag.text().replace(" ", "\n"), frag.charFormat()))
             it += 1
         block = block.next()
+    # a date mention whose text was edited by hand is just text now
+    for r in runs:
+        if r.get("date") and r.get("t") != date_text(r["date"]):
+            r.pop("date")
     # newline runs are unformatted; attach them to neighbours when merging
     return merge_runs(runs)
+
+
+def date_span(doc, pos: int) -> tuple[int, int, str] | None:
+    """(start, end, iso) of the date mention covering the character at `pos`, or None."""
+    if pos < 0 or pos >= doc.characterCount() - 1:
+        return None
+    block = doc.findBlock(pos)
+    it = block.begin()
+    while not it.atEnd():
+        frag = it.fragment()
+        if frag.position() <= pos < frag.position() + frag.length():
+            iso = frag.charFormat().property(P_DATE)
+            return (frag.position(), frag.position() + frag.length(), iso) if iso else None
+        it += 1
+    return None
 
 
 def load_runs(doc, runs: list[dict], plain: bool = False) -> None:

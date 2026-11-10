@@ -92,7 +92,7 @@ class DragDropMixin:
         tops = self.selected_blocks() if self.is_in_selection(bw) else [bw]
         self.save_now()
         self.toolbar.hide()
-        self.slash.close_menu()
+        self.close_menus()
         self._dragging = tops
         self._drag_source = bw
         self._ghost.setPixmap(self._ghost_pixmap(tops))

@@ -132,7 +132,7 @@ class BlockTextEdit(QTextEdit):
                 self._ranging = True
                 ed.select_range(self.bw, ed.block_at(e.globalPosition().toPoint()))
                 return
-        anchor = self.anchorAt(e.pos())
+        anchor = self.anchorAt(e.pos()) or self.bw.editor.date_at(self.bw, e.position())
         self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if anchor else Qt.CursorShape.IBeamCursor)
         super().mouseMoveEvent(e)
 
@@ -160,6 +160,11 @@ class BlockTextEdit(QTextEdit):
         anchor = self.anchorAt(e.pos())
         if anchor and e.button() == Qt.MouseButton.LeftButton and not self.textCursor().hasSelection():
             self.bw.editor.open_link(anchor)
+        elif e.button() == Qt.MouseButton.LeftButton and not self.textCursor().hasSelection():
+            span = self.bw.editor.date_at(self.bw, e.position())
+            if span:
+                self.bw.editor.edit_date(self.bw, span)
+                return
         self.bw.editor.update_inline_toolbar(self.bw)
 
     def focusInEvent(self, e):
