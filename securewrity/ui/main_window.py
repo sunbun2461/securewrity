@@ -269,6 +269,7 @@ class MainWindow(QMainWindow):
             a.triggered.connect(fn)
             self.addAction(a)
         add("Ctrl+P", self.quick_switch)
+        add("Ctrl+Shift+F", self.focus_search)
         add("Ctrl+N", lambda: self.create_page())
         add("Ctrl+Shift+N", lambda: self.create_page(parent_id=self.editor.page_id))
         add("Ctrl+L", self.lock)
@@ -293,6 +294,8 @@ class MainWindow(QMainWindow):
             ("New page", lambda: self.create_page()),
             ("New sub-page", lambda: self.create_page(parent_id=self.editor.page_id)),
             ("Search pages", self.quick_switch),
+            ("Search all notes", self.focus_search),
+            ("Find on this page", lambda: self.editor.find_bar.open_bar()),
             ("Toggle dark / light theme", self.toggle_theme),
             ("Toggle sidebar", self.toggle_sidebar),
             ("Security & encryption", self.show_security),
@@ -427,6 +430,18 @@ class MainWindow(QMainWindow):
         icon = "👤" if self.ctx.account.is_guest else ("🔒" if self.ctx.store.encrypted else "🔓")
         self.sidebar.user_btn.setText(f"{icon}  {self.ctx.account.username}  ▾")
         self._update_title()
+
+    def focus_search(self):
+        """Ctrl+Shift+F: the sidebar's search-everything bar."""
+        if not self.sidebar.isVisible():
+            self.sidebar.show()
+        f = self.sidebar.search.field
+        sel = self.editor.current.text.textCursor().selectedText() if (
+            self.editor.current is not None and self.editor.current.text is not None) else ""
+        if sel and "\u2029" not in sel and len(sel) < 100:
+            f.setText(sel)
+        f.setFocus()
+        f.selectAll()
 
     def toggle_sidebar(self):
         self.sidebar.setVisible(not self.sidebar.isVisible())

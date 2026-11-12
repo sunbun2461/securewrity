@@ -13,7 +13,7 @@ Native Qt desktop app: no browser, no server, no cloud.
 - **Paste Markdown / "Notion format"** from an AI, Notion or a web page and it becomes real blocks (toggles, colors, callouts, to-dos…); sidebar → 📥 Import brings in `.md` files, folders and Notion export `.zip`s with their sub-pages and links
 - **Images**: paste a screenshot, drag picture files in, or `/image`; resize by dragging the edge. Stored inside the (encrypted) notes file
 - **Tables** like Notion's: `/table`, or paste / import a Markdown table; Tab between cells, + for rows and columns, drag borders to resize
-- `/` slash menu, Markdown shortcuts (`# `, `- `, `[] `, `#> ` …), search (Ctrl+P), dark and light themes
+- `/` slash menu, Markdown shortcuts (`# `, `- `, `[] `, `#> ` …), find on page (Ctrl+F), search all notes from the sidebar (Ctrl+Shift+F), jump to a page (Ctrl+P), dark and light themes
 - **Accounts**: a Guest account (no password) plus any number of user accounts
 - **Encryption**, optional and available at any time: password, passphrase (can be generated) or a
   generated **seed phrase** (12/24-word BIP39), or a mix of them (e.g. password + recovery seed phrase)

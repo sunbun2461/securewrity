@@ -7,7 +7,7 @@ from pathlib import Path
 from html import escape
 
 from PyQt6.QtCore import QEasingCurve, QPoint, QPointF, QPropertyAnimation, QSequentialAnimationGroup, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QTextCharFormat, QTextCursor
+from PyQt6.QtGui import QDesktopServices, QFont, QKeySequence, QShortcut, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu,
                              QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
                              QWidget)
@@ -193,6 +193,10 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.slash = SlashMenu(self)
         self.mention = MentionMenu(self)
         self.toolbar = InlineToolbar(self, self)
+        from .find import FindBar
+        self.find_bar = FindBar(self)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self.find_bar.open_bar,
+                  context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.history_reset()
 
     # =====================================================================
@@ -227,6 +231,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self.scroll.verticalScrollBar().setValue(0)
         self.history_reset()
         self._saved_key = (page_id, json.dumps(self.tree_data(), sort_keys=True))
+        self.find_bar.page_changed()
         self.ctx.events.emit("page_opened", page_id)
 
     def _clear_widgets(self):
@@ -246,6 +251,7 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
         self._fill(tree)
         self._loading = False
         self.restructure()
+        self.find_bar.page_changed()
 
     def _fill(self, tree: list[dict]):
         """Create the page's blocks. The block area stays hidden meanwhile, so Qt lays it out and
@@ -264,7 +270,14 @@ class PageEditor(HistoryMixin, SelectionMixin, DragDropMixin, QWidget):
             self.save_now()
             self.load(self.page_id)
 
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "find_bar") and self.find_bar.isVisible():
+            self.find_bar.place()
+
     def changed(self):
+        if hasattr(self, "find_bar"):
+            self.find_bar.page_changed()
         if not self._loading and self.page_id:
             self.save_timer.start()
             self.update_history_buttons()

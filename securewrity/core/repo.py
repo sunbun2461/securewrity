@@ -321,6 +321,56 @@ class Repo:
             out.append({"page": self._page(r), "snippet": snippet})
         return out[:limit]
 
+    def search_hits(self, query: str, max_pages: int = 100, per_page: int = 25) -> list[dict]:
+        """Every match in every (non-trashed) page, for the sidebar search:
+        [{page, path, title_hit, total, hits: [{block_id, nth, snippet, start}]}], newest pages first.
+        `nth` counts matches inside that block, in page order."""
+        q = query.strip()
+        if not q:
+            return []
+        like = f"%{q}%"
+        low = q.lower()
+        pages: dict[str, dict] = {}
+        for r in self.db.execute("SELECT * FROM pages WHERE trashed=0 AND title LIKE ?", (like,)):
+            pages[r["id"]] = {"page": self._page(r), "title_hit": True, "hits": [], "total": 0}
+        rows = self.db.execute("""
+            SELECT b.page_id, b.id, b.text FROM blocks b JOIN pages p ON p.id=b.page_id
+            WHERE p.trashed=0 AND b.text LIKE ?""", (like,)).fetchall()
+        by_page: dict[str, dict] = {}
+        for r in rows:
+            by_page.setdefault(r["page_id"], {})[r["id"]] = r["text"] or ""
+        for pid, texts in by_page.items():
+            if pid not in pages:
+                pages[pid] = {"page": self.get_page(pid), "title_hit": False, "hits": [], "total": 0}
+        out = sorted((e for e in pages.values() if e["page"]), key=lambda e: -e["page"]["updated"])[:max_pages]
+        for e in out:
+            texts = by_page.get(e["page"]["id"])
+            if not texts:
+                continue
+            order = []  # block ids in page order
+            stack = list(reversed(self.get_blocks(e["page"]["id"])))
+            while stack:
+                b = stack.pop()
+                order.append(b["id"])
+                stack.extend(reversed(b["children"]))
+            for bid in [b for b in order if b in texts]:
+                text = texts[bid]
+                tl = text.lower()
+                i, nth = tl.find(low), 0
+                while i >= 0:
+                    e["total"] += 1
+                    if len(e["hits"]) < per_page:
+                        a = max(0, i - 40)
+                        snip = text[a:i + len(q) + 60].replace("\n", " ").replace("\t", " ")
+                        e["hits"].append({"block_id": bid, "nth": nth, "start": i - a,
+                                          "snippet": ("…" if a else "") + snip})
+                    nth += 1
+                    i = tl.find(low, i + len(low))
+            e["path"] = " / ".join((a["title"] or "Untitled") for a in self.ancestors(e["page"]["id"]))
+        for e in out:
+            e.setdefault("path", " / ".join((a["title"] or "Untitled") for a in self.ancestors(e["page"]["id"])))
+        return out
+
     def backlinks(self, page_id: str) -> list[dict]:
         rows = self.db.execute("""
             SELECT DISTINCT p.* FROM blocks b JOIN pages p ON p.id=b.page_id

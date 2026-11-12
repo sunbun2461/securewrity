@@ -280,6 +280,13 @@ class TableBody(NonTextBody):
                 f.setBold(head)
                 it.setFont(f)
                 it.setBackground(shade if head else QColor(0, 0, 0, 0))
+                found, cur = getattr(self, "_find", (set(), None))
+                if (r, c) in found:
+                    from .find import CURRENT_BG, INK, MATCH_BG
+                    it.setBackground(QColor(CURRENT_BG if (r, c) == cur else MATCH_BG))
+                    it.setForeground(QColor(INK))
+                else:
+                    it.setData(Qt.ItemDataRole.ForegroundRole, None)
                 it.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._building = False
 
@@ -312,6 +319,17 @@ class TableBody(NonTextBody):
                 bw.props[k] = v
         self.refresh()
         bw.editor.changed()
+
+    # --- Ctrl+F ----------------------------------------------------------------------------
+    def find_highlight(self, cells: set, current):
+        """Color matching cells (current one orange); an empty set clears."""
+        self._find = (set(cells), current)
+        self._paint_headers()
+
+    def cell_point(self, r: int, c: int, to):
+        t = self.table
+        rect = t.visualRect(t.model().index(r, c))
+        return t.viewport().mapTo(to, rect.center())
 
     def _cell_edited(self, item):
         if not self._building:

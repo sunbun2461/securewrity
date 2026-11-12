@@ -99,8 +99,12 @@ class Sidebar(QWidget):
         self.user_btn.clicked.connect(self._user_menu)
         v.addWidget(self.user_btn)
 
-        for text, fn in (("🔍  Search            Ctrl+P", window.quick_switch),
-                         ("＋  New page        Ctrl+N", lambda: window.create_page())):
+        from .search_panel import SearchPanel
+        self.search = SearchPanel(self, [])
+        v.addSpacing(4)
+        v.addWidget(self.search.field)
+        v.addSpacing(2)
+        for text, fn in (("＋  New page        Ctrl+N", lambda: window.create_page()),):
             b = QPushButton(text)
             b.setObjectName("SideButton")
             b.clicked.connect(fn)
@@ -127,12 +131,19 @@ class Sidebar(QWidget):
         add.setToolTip("New page")
         add.clicked.connect(lambda: window.create_page())
         head.addWidget(add)
-        v.addLayout(head)
+        head.setContentsMargins(0, 0, 0, 0)
+        self._pages_head_at = v.count()
 
         self.tree = PageTree(self)
         self.tree.itemExpanded.connect(self._save_expanded)
         self.tree.itemCollapsed.connect(self._save_expanded)
         v.addWidget(self.tree, 1)
+        v.addWidget(self.search.status)
+        v.addWidget(self.search.results, 1)
+        self.pages_head = QWidget()
+        self.pages_head.setLayout(head)
+        v.insertWidget(self._pages_head_at, self.pages_head)
+        self.search.normal = [self.fav_label, self.favs, self.pages_head, self.tree]
 
         for text, fn in (("📥  Import", self._import_menu),
                          ("🗑  Trash", window.show_trash), ("⚙  Settings", window.show_settings),
@@ -203,8 +214,10 @@ class Sidebar(QWidget):
             it = QTreeWidgetItem([_label(p)])
             it.setData(0, ROLE, p["id"])
             self.favs.addTopLevelItem(it)
-        self.favs.setVisible(bool(favs))
-        self.fav_label.setVisible(bool(favs))
+        searching = self.search.results.isVisible() or bool(self.search.field.text().strip())
+        self.favs.setVisible(bool(favs) and not searching)
+        self.fav_label.setVisible(bool(favs) and not searching)
+        self.search.refresh()
         self.favs.setFixedHeight(min(160, 30 * len(favs) + 6))
         self._restoring = False
         self.items = items

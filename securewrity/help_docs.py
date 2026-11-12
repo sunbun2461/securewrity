@@ -303,8 +303,23 @@ or turn it into plain text.</p>
 work, click <b>⋯</b> at the top right of the page → <b>Full width</b> and the page uses the whole window.
 Each page remembers its own setting; click it again to go back.</p>
 """, 2)
-    sec("search", "Finding a page", f"""
-<p>Press {kbd('Ctrl', 'P')} or click <b>Search</b> in the sidebar. Type part of a title or of the text on a page.</p>
+    sec("search", "Searching", f"""
+<p>There are three ways to find things:</p>
+{table([
+    [kbd('Ctrl', 'F'), "<b>Find on this page.</b> A bar opens at the top right. Every match is highlighted "
+                       "(the current one in orange) and it shows “2 of 7”. Matches inside closed toggles "
+                       "and in table cells count too: the toggle opens when you get to one."],
+    [kbd('Ctrl', 'Shift', 'F'), "<b>Search all notes.</b> The search bar at the top of the sidebar. "
+                                "The page list is replaced by every page with a match and every matching line. "
+                                "Click a line to open that page right at that spot."],
+    [kbd('Ctrl', 'P'), "<b>Jump to a page</b> by name (quick switcher)."],
+], ["Keys", "What it does"])}
+<p><b>In the Ctrl+F bar:</b> {kbd('Enter')} next match · {kbd('Shift', 'Enter')} previous ·
+<b>Aa</b> match upper/lower case · {kbd('Esc')} closes it and leaves the cursor on the match.
+It keeps up as you edit the page.</p>
+<p><b>In the sidebar search:</b> {kbd('Enter')} opens the first result · {kbd('↓')} moves into the results ·
+{kbd('Esc')} or the ✕ clears it and brings your page list back. After opening a result, the Ctrl+F bar is
+already filled in, so {kbd('Enter')} goes to the next match on that page. Pages in the Trash aren't searched.</p>
 """, 2)
     sec("trash", "Deleting and the Trash", f"""
 <p>Deleted pages go to the <b>Trash</b> (bottom of the sidebar). From there you can restore them or delete them for good.
@@ -413,7 +428,9 @@ reopen the last page. {kbd('Ctrl', 'Shift', 'L')} flips between dark and light.<
 """)
     sec("shortcuts", "Keyboard shortcuts", table([
         [kbd('F1'), "Help"],
-        [kbd('Ctrl', 'P'), "Find a page"],
+        [kbd('Ctrl', 'F'), "Find on this page"],
+        [kbd('Ctrl', 'Shift', 'F'), "Search all notes (sidebar search bar)"],
+        [kbd('Ctrl', 'P'), "Jump to a page by name"],
         [kbd('Ctrl', 'N'), "New page"],
         [kbd('Ctrl', 'Shift', 'N'), "New page inside this one"],
         [kbd('Ctrl', 'Shift', 'P'), "Command palette (every command by name)"],
